@@ -227,39 +227,18 @@
               break;
               
             case 'tool-input-start':
-              // Tool call starting - just show the tool name for now
-              console.log(`[${agent}] TOOL INPUT START:`, event);
               addToolCall(container, event.toolName, null, agent);
               break;
               
             case 'tool-input-available':
-              console.log(`[${agent}] TOOL INPUT AVAILABLE:`, event);
               addToolCall(container, event.toolName, event.input, agent);
               break;
               
             case 'tool-output-available':
-              console.log(`[${agent}] TOOL OUTPUT AVAILABLE:`, event);
               addToolResult(container, event.output, agent);
               break;
-              
-            case 'tool-call':
-              // Alternative event name
-              console.log(`[${agent}] TOOL CALL:`, event);
-              addToolCall(container, event.toolName || event.name, event.input || event.args, agent);
-              break;
-              
-            case 'tool-result':
-              // Alternative event name  
-              console.log(`[${agent}] TOOL RESULT:`, event);
-              addToolResult(container, event.result || event.output, agent);
-              break;
-              
-            default:
-              console.log(`[${agent}] UNHANDLED EVENT:`, event.type, event);
           }
-        } catch (e) {
-          console.error(`[${agent}] Parse error:`, e);
-        }
+        } catch (e) {}
       }
     }
     
