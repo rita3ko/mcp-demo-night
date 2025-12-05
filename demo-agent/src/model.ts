@@ -38,10 +38,10 @@ export function createCodeGenModel(env: {
     headers: {
       'cf-aig-authorization': `Bearer ${env.CF_AIG_TOKEN}`,
     },
-    // Enable usage tracking in streaming responses
-    includeUsage: true,
   });
 
-  // Use OpenAI gpt-4.1 for code generation - better structured output support
-  return client('openai/gpt-4.1');
+  // Use OpenAI gpt-4.1 for code generation with structured outputs
+  return client('openai/gpt-4.1', {
+    structuredOutputs: true,
+  });
 }
