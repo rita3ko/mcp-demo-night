@@ -134,22 +134,42 @@ Be concise and helpful in your responses.`;
     await this.ctx.storage.put('total-usage', { inputTokens: 0, outputTokens: 0 });
   }
   
-  // Method to clear conversation history (but not framework tables)
+  // Method to clear all state (conversation history, usage, session)
   async clearState(): Promise<void> {
-    await this.ctx.storage.delete('total-usage');
-    await this.ctx.storage.delete('mcp-session-id');
+    // Nuclear option - delete all DO storage
+    await this.ctx.storage.deleteAll();
     this.mcpSessionId = null;
-    
-    // Clear conversation history via the framework's SQL
-    try {
-      this.sql.exec('DELETE FROM cf_agents_state WHERE key LIKE "messages%"');
-    } catch (e) {
-      // Table might not exist
-    }
   }
   
   // Get the MCP session ID (for sharing with codemode agent)
   async getSharedSessionId(): Promise<string> {
     return this.getMcpSessionId();
+  }
+
+  // Get debug info for diagnostics
+  async getDebugInfo(): Promise<object> {
+    const sessionId = await this.ctx.storage.get<string>('mcp-session-id');
+    const usage = await this.getUsage();
+    
+    // Get message structure (role + content length for each)
+    const messages = this.messages ?? [];
+    const messageStructure = messages.map((msg: any) => ({
+      role: msg?.role ?? 'unknown',
+      contentLength: typeof msg?.content === 'string' 
+        ? msg.content.length 
+        : (msg?.content ? JSON.stringify(msg.content).length : 0),
+    }));
+
+    // System prompt length (matching the one in onChatMessage)
+    const systemPromptLength = 892; // Approximate length of the system prompt
+    
+    return {
+      mcpSessionId: sessionId || null,
+      messagesCount: messages.length,
+      messageStructure,
+      systemPromptLength,
+      toolsCount: 15,
+      usage,
+    };
   }
 }

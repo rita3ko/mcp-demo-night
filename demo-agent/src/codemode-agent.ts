@@ -207,16 +207,46 @@ Never just say "Found X events" - always list the actual event details.`;
     await this.ctx.storage.put('total-usage', { inputTokens: 0, outputTokens: 0 });
   }
   
-  // Method to clear conversation history (but not framework tables)
+  // Method to clear all state (conversation history, usage, cache)
   async clearState(): Promise<void> {
-    await this.ctx.storage.delete('total-usage');
+    // Nuclear option - delete all DO storage
+    await this.ctx.storage.deleteAll();
     
-    // Clear conversation history via the framework's SQL
+    // Also clear in-memory cache
+    this.cachedTypes = null;
+    this.cachedDescriptions = null;
+  }
+
+  // Get debug info for diagnostics
+  async getDebugInfo(): Promise<object> {
+    const usage = await this.getUsage();
+    
+    // Get message structure (role + content length for each)
+    const messages = this.messages ?? [];
+    const messageStructure = messages.map((msg: any) => ({
+      role: msg?.role ?? 'unknown',
+      contentLength: typeof msg?.content === 'string' 
+        ? msg.content.length 
+        : (msg?.content ? JSON.stringify(msg.content).length : 0),
+    }));
+
+    // Try to get shared session ID (may fail if MCP agent not initialized)
+    let sharedSessionId = null;
     try {
-      this.sql.exec('DELETE FROM cf_agents_state WHERE key LIKE "messages%"');
+      sharedSessionId = await this.getSharedSessionId();
     } catch (e) {
-      // Table might not exist
+      // Ignore - MCP agent may not be initialized
     }
+
+    return {
+      sharedSessionId,
+      messagesCount: messages.length,
+      messageStructure,
+      cachedTypesLength: this.cachedTypes?.length ?? null,
+      cachedDescriptionsLength: this.cachedDescriptions?.length ?? null,
+      toolsCount: 1,
+      usage,
+    };
   }
 
   /**

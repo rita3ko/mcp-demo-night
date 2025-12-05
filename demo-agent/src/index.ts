@@ -25,6 +25,25 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 // Session ID for DO instances - must match the frontend
 const SESSION_ID = 'session-v5';
 
+// Debug endpoint - returns diagnostic info for both agents
+app.get('/api/debug', async (c) => {
+  const mcpId = c.env.MCP_CHAT_AGENT.idFromName(SESSION_ID);
+  const mcpStub = c.env.MCP_CHAT_AGENT.get(mcpId) as any;
+  const mcpDebug = await mcpStub.getDebugInfo();
+  
+  const codemodeId = c.env.CODEMODE_CHAT_AGENT.idFromName(SESSION_ID);
+  const codemodeStub = c.env.CODEMODE_CHAT_AGENT.get(codemodeId) as any;
+  const codemodeDebug = await codemodeStub.getDebugInfo();
+  
+  return c.json({
+    timestamp: new Date().toISOString(),
+    sessionId: SESSION_ID,
+    flumaUrl: c.env.FLUMA_MCP_URL,
+    mcp: mcpDebug,
+    codemode: codemodeDebug,
+  });
+});
+
 // Get usage for both agents (combined)
 app.get('/api/usage', async (c) => {
   const mcpId = c.env.MCP_CHAT_AGENT.idFromName(SESSION_ID);
