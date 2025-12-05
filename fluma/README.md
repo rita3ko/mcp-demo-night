@@ -1,105 +1,198 @@
-# Fluma - Fake Luma
+# Fluma - Event Management MCP Server
 
-An MCP-first event management app built on Cloudflare using the Agents SDK.
+An MCP (Model Context Protocol) server for event management, built on Cloudflare Workers with Durable Objects.
 
-## Features
+## Overview
 
-- **Event Management**: Create, update, and delete events
-- **Role-based Access**: Per-event host/co-host permissions
-- **RSVP System**: Attendees can RSVP with going/maybe/not_going
-- **Email Notifications**: Automatic notifications via Resend when events are updated
-- **GitHub OAuth**: Secure authentication via GitHub
+Fluma provides a complete event management API exposed via MCP, allowing AI agents to create events, manage RSVPs, and handle user profiles. It uses SQLite (via Durable Objects) for persistence.
+
+For this demo, Fluma runs in **stateless mode** - all MCP sessions route to the same Durable Object, ensuring all agents see the same data.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Fluma Worker                              │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              Request Handler                          │   │
+│  │                                                       │   │
+│  │  All requests → Same session ID → Same DO instance   │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              FlumaMCP Durable Object                  │   │
+│  │                                                       │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │   │
+│  │  │   Users     │  │   Events    │  │   RSVPs     │   │   │
+│  │  │   Table     │  │   Table     │  │   Table     │   │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘   │   │
+│  │                                                       │   │
+│  │                    SQLite DB                          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## MCP Tools
 
 ### Profile Tools
-- `get_profile` - Get your user profile
-- `update_profile` - Update your profile (name, email)
+| Tool | Description |
+|------|-------------|
+| `get_profile` | Get current user's profile |
+| `update_profile` | Update profile (first_name, last_name, email) |
 
 ### Event Listing
-- `list_events` - List events (filter: upcoming, past, hosting, attending, all)
-- `get_event` - Get event details including RSVP counts
+| Tool | Description |
+|------|-------------|
+| `list_events` | List events with filters (upcoming, past, hosting, attending, all) |
+| `get_event` | Get event details including RSVP counts and co-hosts |
 
-### Event Host Tools (requires host/co-host role)
-- `create_event` - Create a new event
-- `update_event` - Update event details (notifies attendees)
-- `delete_event` - Delete an event (notifies attendees)
-- `list_event_rsvps` - View RSVPs for your event
-- `add_cohost` - Add a co-host to your event
-- `remove_cohost` - Remove a co-host
+### Event Host Tools
+| Tool | Description |
+|------|-------------|
+| `create_event` | Create a new event (you become the host) |
+| `update_event` | Update event details (notifies attendees) |
+| `delete_event` | Delete an event (notifies attendees) |
+| `list_event_rsvps` | View RSVPs for events you host |
+| `add_cohost` | Add a co-host to your event |
+| `remove_cohost` | Remove a co-host |
 
 ### RSVP Tools
-- `rsvp` - RSVP to an event
-- `update_rsvp` - Update your RSVP status
-- `cancel_rsvp` - Cancel your RSVP
-- `get_my_rsvps` - List events you've RSVP'd to
-- `get_my_events` - List events you're hosting
+| Tool | Description |
+|------|-------------|
+| `rsvp` | RSVP to an event (going, maybe, not_going) |
+| `update_rsvp` | Update your RSVP status |
+| `cancel_rsvp` | Cancel your RSVP |
+| `get_my_rsvps` | List events you've RSVP'd to |
+| `get_my_events` | List events you're hosting |
 
-## Setup
+## MCP Transports
 
-### 1. Create GitHub OAuth App
+Fluma supports two MCP transport methods:
 
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Create a new OAuth App:
-   - **Application name**: Fluma (local) or Fluma (production)
-   - **Homepage URL**: `http://localhost:8788` or your production URL
-   - **Authorization callback URL**: `http://localhost:8788/callback` or production
-
-### 2. Create KV Namespace
-
-```bash
-npx wrangler kv namespace create "OAUTH_KV"
+### HTTP Streamable (Recommended)
+```
+POST /mcp
+Headers:
+  Content-Type: application/json
+  Accept: application/json, text/event-stream
+  mcp-session-id: <session-id>  (after initialization)
 ```
 
-Update `wrangler.jsonc` with the returned KV ID.
-
-### 3. Set Environment Variables
-
-Copy `.dev.vars.example` to `.dev.vars` and fill in:
-
-```bash
-cp .dev.vars.example .dev.vars
+### Server-Sent Events (Legacy)
+```
+GET /sse
+Headers:
+  Accept: text/event-stream
+  mcp-session-id: <session-id>
 ```
 
-### 4. Run Locally
+## Database Schema
+
+```sql
+-- Users
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE,
+  first_name TEXT,
+  last_name TEXT,
+  github_id TEXT UNIQUE,
+  github_username TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Events
+CREATE TABLE events (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  location TEXT NOT NULL,
+  date TEXT NOT NULL,
+  host_id TEXT NOT NULL REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Event Co-hosts
+CREATE TABLE event_hosts (
+  event_id TEXT REFERENCES events(id),
+  user_id TEXT REFERENCES users(id),
+  PRIMARY KEY (event_id, user_id)
+);
+
+-- RSVPs
+CREATE TABLE rsvps (
+  id TEXT PRIMARY KEY,
+  event_id TEXT REFERENCES events(id),
+  user_id TEXT REFERENCES users(id),
+  status TEXT CHECK(status IN ('going', 'maybe', 'not_going')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(event_id, user_id)
+);
+```
+
+## Local Development
 
 ```bash
+# Install dependencies
 npm install
-npm start
+
+# Create environment file (optional - for email notifications)
+cp .dev.vars.example .dev.vars
+
+# Start development server
+npm run dev
 ```
 
-### 5. Test with MCP Inspector
+The server runs at `http://localhost:8788`.
+
+### Testing with MCP Inspector
 
 ```bash
 npx @modelcontextprotocol/inspector@latest
 ```
 
-Connect to `http://localhost:8788/sse` or `http://localhost:8788/mcp`
+Connect to `http://localhost:8788/mcp` (HTTP Streamable) or `http://localhost:8788/sse` (SSE).
 
 ## Deployment
 
-### Set Secrets
-
 ```bash
-wrangler secret put GITHUB_CLIENT_ID
-wrangler secret put GITHUB_CLIENT_SECRET
-wrangler secret put COOKIE_ENCRYPTION_KEY  # openssl rand -hex 32
-wrangler secret put RESEND_API_KEY         # optional
-```
+# Set secrets (optional - for email notifications)
+wrangler secret put RESEND_API_KEY
 
-### Deploy
-
-```bash
+# Deploy
 npm run deploy
 ```
 
-## Architecture
+## Configuration
 
-- **Runtime**: Cloudflare Workers
-- **Database**: Durable Object SQLite
-- **Auth**: GitHub OAuth via workers-oauth-provider
-- **Protocol**: MCP (Model Context Protocol)
-- **Email**: Resend
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `RESEND_API_KEY` | No | Resend API key for email notifications |
+
+### Wrangler Configuration
+
+The `wrangler.jsonc` configures:
+- Durable Object binding (`MCP_OBJECT`)
+- SQLite migrations for the DO
+
+## Stateless Mode
+
+For the MCP Night demo, Fluma operates in stateless mode:
+
+```typescript
+const SHARED_SESSION_ID = "fluma-shared";
+
+// All requests use the same session ID
+// This routes all MCP sessions to the same Durable Object
+```
+
+This ensures that events created by one agent are visible to all other agents, enabling the side-by-side comparison demo.
 
 ## License
 
