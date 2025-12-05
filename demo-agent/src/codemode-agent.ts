@@ -195,7 +195,16 @@ The codemode tool can work with:
 
 ${toolDescriptions}
 
-When users ask about events, RSVPs, or their profile, use the codemode tool with a clear function description.`;
+When users ask about events, RSVPs, or their profile, use the codemode tool with a clear function description.
+
+IMPORTANT: After executing code, always provide a detailed, human-friendly summary of the results. For events, include:
+- Event title
+- Location  
+- Date and time (formatted nicely)
+- Host information
+- RSVP status if applicable
+
+Never just say "Found X events" - always list the actual event details.`;
 
     const result = streamText({
       model,

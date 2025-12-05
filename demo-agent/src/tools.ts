@@ -50,7 +50,7 @@ async function callFlumaTool(
 }
 
 // Create all Fluma tools in AI SDK format
-export function createFlumaTools(mcpUrl: string, sessionId: string) {
+export function createFlumaTools(mcpUrl: string, sessionId: string = '') {
   return {
     // ==================== PROFILE TOOLS ====================
     get_profile: tool({
