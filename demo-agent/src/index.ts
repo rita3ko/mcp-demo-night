@@ -23,7 +23,7 @@ app.use('*', cors());
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
 // Session ID for DO instances - must match the frontend
-const SESSION_ID = 'session-v5';
+const SESSION_ID = 'session-v6';
 
 // Debug endpoint - returns diagnostic info for both agents
 app.get('/api/debug', async (c) => {

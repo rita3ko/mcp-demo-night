@@ -136,14 +136,33 @@ Be concise and helpful in your responses.`;
   
   // Method to clear all state (conversation history, usage, session)
   async clearState(): Promise<void> {
-    // Nuclear option - delete all DO storage
-    await this.ctx.storage.deleteAll();
+    // Clear our custom state
+    await this.ctx.storage.delete('total-usage');
+    await this.ctx.storage.delete('mcp-session-id');
     this.mcpSessionId = null;
+    
+    // Clear messages from the AIChatAgent framework using SQL
+    // The framework uses cf_agents_state table
+    try {
+      this.sql`DELETE FROM cf_agents_state`;
+    } catch (e) {
+      // Table might not exist yet (first run)
+    }
   }
   
   // Get the MCP session ID (for sharing with codemode agent)
   async getSharedSessionId(): Promise<string> {
     return this.getMcpSessionId();
+  }
+
+  // List SQL tables for debugging
+  async listTables(): Promise<string[]> {
+    try {
+      const result = this.sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type='table'`;
+      return result.map(r => r.name);
+    } catch (e) {
+      return [];
+    }
   }
 
   // Get debug info for diagnostics
@@ -163,6 +182,8 @@ Be concise and helpful in your responses.`;
     // System prompt length (matching the one in onChatMessage)
     const systemPromptLength = 892; // Approximate length of the system prompt
     
+    const tables = await this.listTables();
+    
     return {
       mcpSessionId: sessionId || null,
       messagesCount: messages.length,
@@ -170,6 +191,7 @@ Be concise and helpful in your responses.`;
       systemPromptLength,
       toolsCount: 15,
       usage,
+      tables,
     };
   }
 }

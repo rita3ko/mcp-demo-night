@@ -22,7 +22,7 @@ type Env = {
 };
 
 // Session ID for the MCP agent DO - must match frontend
-const MCP_AGENT_SESSION = 'session-v5';
+const MCP_AGENT_SESSION = 'session-v6';
 
 export class CodemodeChatAgent extends AIChatAgent<Env> {
   // In-memory cache for types and descriptions (per DO instance)
@@ -143,24 +143,10 @@ User request: ${functionDescription}`,
           // Execute the generated code using Dynamic Worker Loader
           const result = await this.executeCode(generatedCode);
 
-          // Return a cleaner format for the LLM to interpret
-          // If result is a string with "Found X", try to parse and return just the data
-          let cleanResult = result;
-          if (typeof result === 'string') {
-            // Try to extract JSON data from Fluma responses like "Found 4 event(s):\n{...}"
-            const jsonMatch = result.match(/\n(\[[\s\S]*\]|\{[\s\S]*\})$/);
-            if (jsonMatch) {
-              try {
-                cleanResult = JSON.parse(jsonMatch[1]);
-              } catch {
-                cleanResult = result;
-              }
-            }
-          }
-
           return JSON.stringify({
             success: true,
-            data: cleanResult,
+            code: generatedCode,
+            result,
           }, null, 2);
         } catch (error: any) {
           return JSON.stringify({
@@ -229,12 +215,20 @@ Never give bare, robotic responses - be friendly and helpful!`;
   
   // Method to clear all state (conversation history, usage, cache)
   async clearState(): Promise<void> {
-    // Nuclear option - delete all DO storage
-    await this.ctx.storage.deleteAll();
+    // Clear our custom state
+    await this.ctx.storage.delete('total-usage');
     
-    // Also clear in-memory cache
+    // Clear in-memory cache
     this.cachedTypes = null;
     this.cachedDescriptions = null;
+    
+    // Clear messages from the AIChatAgent framework using SQL
+    // The framework uses cf_agents_state table
+    try {
+      this.sql`DELETE FROM cf_agents_state`;
+    } catch (e) {
+      // Table might not exist yet (first run)
+    }
   }
 
   // Get debug info for diagnostics
