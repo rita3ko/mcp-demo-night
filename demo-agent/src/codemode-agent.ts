@@ -4,7 +4,6 @@ import {
   streamText,
   generateObject,
   tool,
-  stepCountIs,
   type StreamTextOnFinishCallback,
   type ToolSet,
 } from 'ai';
@@ -196,17 +195,14 @@ The codemode tool can work with:
 
 ${toolDescriptions}
 
-When users ask about events, RSVPs, or their profile, use the codemode tool with a clear function description.
-After the code executes, explain what happened and share relevant results with the user.
-
-IMPORTANT: Always use the codemode tool for any task involving events, RSVPs, or profiles.`;
+When users ask about events, RSVPs, or their profile, use the codemode tool with a clear function description.`;
 
     const result = streamText({
       model,
       system: systemPrompt,
       messages: convertToModelMessages(this.messages),
       tools: { codemode: codemodeTool },
-      stopWhen: stepCountIs(3),
+      maxSteps: 2,
       onFinish: async (event) => {
         // Accumulate usage in DO storage
         const usage = event.usage;

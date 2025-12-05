@@ -1,886 +1,445 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fluma Demo - MCP vs Codemode</title>
-  <!-- Marked.js for markdown rendering -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <title>MCP vs Codemode</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            border: '#27272a',
+            background: '#09090b',
+            foreground: '#fafafa',
+            muted: '#18181b',
+            'muted-foreground': '#a1a1aa',
+          }
+        }
+      }
+    }
+  </script>
+  
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-    
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: #0f0f0f;
-      color: #e0e0e0;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    
-    .header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      padding: 20px;
-      text-align: center;
-      border-bottom: 1px solid #333;
-      flex-shrink: 0; /* Prevent shrinking */
-    }
-    
-    .header h1 {
-      color: #fff;
-      font-size: 24px;
-      margin-bottom: 8px;
-    }
-    
-    .header p {
-      color: #888;
-      font-size: 14px;
-    }
-    
-    .container {
-      display: flex;
-      flex: 1;
-      min-height: 0; /* Important for flex children to scroll */
-      gap: 1px;
-      background: #333;
-    }
-    
-    .panel {
-      flex: 1;
-      min-width: 0; /* Prevents flex items from overflowing */
-      display: flex;
-      flex-direction: column;
-      background: #1a1a1a;
-      overflow: hidden;
-    }
-    
-    .panel-header {
-      padding: 16px;
-      background: #222;
-      border-bottom: 1px solid #333;
-    }
-    
-    .panel-header h2 {
-      font-size: 16px;
-      color: #fff;
-      margin-bottom: 4px;
-    }
-    
-    .panel-header p {
-      font-size: 12px;
-      color: #666;
-    }
-    
-    .mcp-panel .panel-header {
-      border-left: 3px solid #4CAF50;
-    }
-    
-    .codemode-panel .panel-header {
-      border-left: 3px solid #2196F3;
-    }
-    
-    .messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-    }
-    
-    .message {
-      margin-bottom: 16px;
-      padding: 12px;
-      border-radius: 8px;
-      max-width: 90%;
-    }
-    
-    .message.user {
-      background: #2d2d2d;
-      margin-left: auto;
-    }
-    
-    .message.assistant {
-      background: #1e3a5f;
-    }
-    
-    /* Markdown styles for assistant messages */
-    .message.assistant p {
-      margin-bottom: 8px;
-    }
-    
-    .message.assistant p:last-child {
-      margin-bottom: 0;
-    }
-    
-    .message.assistant strong {
-      color: #fff;
-    }
-    
-    .message.assistant ul, .message.assistant ol {
-      margin: 8px 0;
-      padding-left: 20px;
-    }
-    
-    .message.assistant li {
-      margin-bottom: 4px;
-    }
-    
-    .message.assistant code {
-      background: rgba(0, 0, 0, 0.3);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.9em;
-    }
-    
-    .message.assistant pre code {
-      background: transparent;
-      padding: 0;
-    }
-    
-    .message.assistant h1, .message.assistant h2, .message.assistant h3 {
-      margin: 12px 0 8px 0;
-      color: #fff;
-    }
-    
-    .message.assistant h1 { font-size: 1.3em; }
-    .message.assistant h2 { font-size: 1.2em; }
-    .message.assistant h3 { font-size: 1.1em; }
-    
-    .message.tool-call {
-      background: #1e3e1e;
-      border-left: 3px solid #4CAF50;
-      font-family: monospace;
-      font-size: 13px;
-    }
-    
-    .message.code {
-      background: #1e1e3e;
-      border-left: 3px solid #2196F3;
-    }
-    
-    .message pre {
-      background: #0d0d0d;
-      padding: 10px;
-      border-radius: 4px;
-      overflow-x: auto;
-      margin-top: 8px;
-      font-size: 12px;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      max-width: 100%;
-    }
-    
-    .message code {
-      font-family: 'Fira Code', 'Monaco', monospace;
-    }
-    
-    .message.code-generated {
-      background: #1a1a3e;
-      border-left: 3px solid #9c27b0;
-    }
-    
-    .message.code-generated .code-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-      color: #9c27b0;
-      font-weight: 500;
-    }
-    
-    .message.code-generated pre {
-      background: #0a0a1a;
-      border: 1px solid #333;
-    }
-    
-    .message.code-result {
-      background: #1a2e1a;
-      border-left: 3px solid #4caf50;
-    }
-    
-    .message.code-result .result-header {
-      color: #4caf50;
-      font-weight: 500;
-      margin-bottom: 8px;
-    }
-    
-    .message-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      color: #888;
-      margin-bottom: 4px;
-    }
-    
-    .input-area {
-      padding: 16px;
-      background: #222;
-      border-top: 1px solid #333;
-    }
-    
-    .shared-input {
-      padding: 16px;
-      background: #1a1a2e;
-      border-top: 1px solid #333;
-      display: flex;
-      gap: 12px;
-      flex-shrink: 0; /* Prevent shrinking */
-    }
-    
-    input[type="text"] {
-      flex: 1;
-      padding: 12px 16px;
-      border: 1px solid #444;
-      border-radius: 8px;
-      background: #2d2d2d;
-      color: #fff;
-      font-size: 14px;
-    }
-    
-    input[type="text"]:focus {
-      outline: none;
-      border-color: #666;
-    }
-    
-    button {
-      padding: 12px 24px;
-      background: linear-gradient(135deg, #4CAF50 0%, #2196F3 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: opacity 0.2s;
-    }
-    
-    button:hover {
-      opacity: 0.9;
-    }
-    
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      color: #666;
-    }
-    
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #666;
-    }
-    
-    .status-dot.connected {
-      background: #4CAF50;
-    }
-    
-    .status-dot.loading {
-      background: #FFC107;
-      animation: pulse 1s infinite;
-    }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-    
-    .token-usage {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      background: #2d2d2d;
-      border-radius: 6px;
-      font-size: 12px;
-      color: #888;
-      margin-top: 8px;
-    }
-    
-    .token-usage .label {
-      color: #666;
-    }
-    
-    .token-usage .value {
-      color: #fff;
-      font-weight: 500;
-      font-family: 'Monaco', monospace;
-    }
-    
-    .token-usage .total {
-      color: #4CAF50;
-      font-weight: 600;
-    }
-    
-    .mcp-panel .token-usage {
-      border-left: 2px solid #4CAF50;
-    }
-    
-    .codemode-panel .token-usage {
-      border-left: 2px solid #2196F3;
-    }
-    
-    .loading-dots::after {
-      content: '';
-      animation: dots 1.5s infinite;
-    }
-    
-    @keyframes dots {
-      0%, 20% { content: '.'; }
-      40% { content: '..'; }
-      60%, 100% { content: '...'; }
-    }
-    
-    .btn-secondary {
-      background: linear-gradient(135deg, #ff5722 0%, #e91e63 100%);
-    }
-    
-    .session-summary {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    
-    .session-summary.visible {
-      display: flex;
-    }
-    
-    .summary-card {
-      background: #1a1a2e;
-      border-radius: 16px;
-      padding: 32px;
-      max-width: 600px;
-      width: 90%;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    }
-    
-    .summary-card h2 {
-      text-align: center;
-      margin-bottom: 24px;
-      color: #fff;
-      font-size: 24px;
-    }
-    
-    .summary-comparison {
-      display: flex;
-      gap: 24px;
-      margin-bottom: 24px;
-    }
-    
-    .summary-agent {
-      flex: 1;
-      background: #222;
-      border-radius: 12px;
-      padding: 20px;
-    }
-    
-    .summary-agent.mcp {
-      border-top: 3px solid #4CAF50;
-    }
-    
-    .summary-agent.codemode {
-      border-top: 3px solid #2196F3;
-    }
-    
-    .summary-agent h3 {
-      font-size: 14px;
-      color: #888;
-      margin-bottom: 16px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    
-    .summary-stat {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      font-size: 14px;
-    }
-    
-    .summary-stat .label {
-      color: #888;
-    }
-    
-    .summary-stat .value {
-      color: #fff;
-      font-weight: 500;
-      font-family: 'Monaco', monospace;
-    }
-    
-    .summary-stat.total {
-      border-top: 1px solid #333;
-      padding-top: 12px;
-      margin-top: 16px;
-    }
-    
-    .summary-stat.total .value {
-      font-size: 18px;
-    }
-    
-    .summary-agent.mcp .summary-stat.total .value {
-      color: #4CAF50;
-    }
-    
-    .summary-agent.codemode .summary-stat.total .value {
-      color: #2196F3;
-    }
-    
-    .summary-winner {
-      text-align: center;
-      padding: 16px;
-      background: #2d2d2d;
-      border-radius: 8px;
-      margin-bottom: 24px;
-    }
-    
-    .summary-winner .label {
-      font-size: 12px;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 8px;
-    }
-    
-    .summary-winner .winner-text {
-      font-size: 18px;
-      font-weight: 600;
-    }
-    
-    .summary-winner .winner-text.mcp {
-      color: #4CAF50;
-    }
-    
-    .summary-winner .winner-text.codemode {
-      color: #2196F3;
-    }
-    
-    .summary-winner .winner-text.tie {
-      color: #FFC107;
-    }
-    
-    .summary-actions {
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-    }
-    
-    .summary-actions button {
-      min-width: 120px;
-    }
-    
-    .btn-outline {
-      background: transparent;
-      border: 1px solid #444;
-      color: #888;
-    }
-    
-    .btn-outline:hover {
-      border-color: #666;
-      color: #fff;
-    }
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #09090b;
+      color: #fafafa;
+    }
+    
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
   </style>
 </head>
-<body>
-  <div class="header">
-    <h1>🗓️ Fluma Demo: MCP vs Codemode</h1>
-    <p>Compare traditional MCP tool calls with AI-generated code execution</p>
-  </div>
+<body class="h-screen flex flex-col overflow-hidden">
   
-  <div class="container">
-    <div class="panel mcp-panel">
-      <div class="panel-header">
-        <h2>🔧 MCP Agent</h2>
-        <p>Traditional approach: AI calls tools one at a time via MCP protocol</p>
-        <div class="status">
-          <span class="status-dot" id="mcp-status"></span>
-          <span id="mcp-status-text">Disconnected</span>
-        </div>
+  <!-- Header -->
+  <header class="flex-shrink-0 border-b border-border px-6 py-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-semibold">MCP vs Codemode</h1>
+        <p class="text-sm text-muted-foreground">Compare AI agent approaches</p>
       </div>
-      <div class="messages" id="mcp-messages"></div>
+      <button onclick="endSession()" class="px-3 py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md transition-colors">
+        End Session
+      </button>
+    </div>
+  </header>
+  
+  <!-- Main Content -->
+  <div class="flex-1 flex min-h-0">
+    
+    <!-- MCP Panel -->
+    <div class="w-1/2 flex flex-col border-r border-border min-w-0">
+      <div class="flex-shrink-0 px-4 py-3 border-b border-border">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-medium">MCP Agent</h2>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400">Traditional</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="mcp-status-dot" class="h-2 w-2 rounded-full bg-zinc-500"></span>
+            <span id="mcp-status-text" class="text-xs text-muted-foreground">Connecting...</span>
+          </div>
+        </div>
+        <p class="text-xs text-muted-foreground mt-1">Calls tools directly via MCP protocol</p>
+      </div>
+      <div id="mcp-messages" class="flex-1 overflow-y-auto p-4 space-y-3 min-w-0"></div>
     </div>
     
-    <div class="panel codemode-panel">
-      <div class="panel-header">
-        <h2>⚡ Codemode Agent</h2>
-        <p>Code-first approach: AI generates and executes code to orchestrate tools</p>
-        <div class="status">
-          <span class="status-dot" id="codemode-status"></span>
-          <span id="codemode-status-text">Disconnected</span>
+    <!-- Codemode Panel -->
+    <div class="w-1/2 flex flex-col min-w-0">
+      <div class="flex-shrink-0 px-4 py-3 border-b border-border">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-medium">Codemode Agent</h2>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400">Code-First</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="codemode-status-dot" class="h-2 w-2 rounded-full bg-zinc-500"></span>
+            <span id="codemode-status-text" class="text-xs text-muted-foreground">Connecting...</span>
+          </div>
         </div>
+        <p class="text-xs text-muted-foreground mt-1">Generates and executes JavaScript code</p>
       </div>
-      <div class="messages" id="codemode-messages"></div>
+      <div id="codemode-messages" class="flex-1 overflow-y-auto p-4 space-y-3 min-w-0"></div>
     </div>
   </div>
   
-  <div class="shared-input">
-    <input 
-      type="text" 
-      id="user-input" 
-      placeholder="Ask both agents the same question... (e.g., 'Create an event for MCP Night Demo tomorrow at 6pm')"
-      onkeypress="if(event.key === 'Enter') sendMessage()"
-    >
-    <button onclick="sendMessage()" id="send-btn">Send to Both</button>
-    <button onclick="endSession()" class="btn-secondary" id="end-btn">End Session</button>
+  <!-- Input Area -->
+  <div class="flex-shrink-0 border-t border-border p-4">
+    <div class="flex gap-3 max-w-4xl mx-auto">
+      <input 
+        type="text" 
+        id="user-input" 
+        placeholder="Ask both agents something..." 
+        class="flex-1 px-4 py-2 bg-zinc-900 border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-zinc-600"
+        onkeypress="if(event.key === 'Enter') sendMessage()"
+      >
+      <button onclick="sendMessage()" class="px-4 py-2 bg-white text-black font-medium rounded-lg text-sm hover:bg-zinc-200 transition-colors">
+        Send
+      </button>
+    </div>
   </div>
   
-  <div class="session-summary" id="session-summary">
-    <div class="summary-card">
-      <h2>Session Summary</h2>
-      
-      <div class="summary-comparison">
-        <div class="summary-agent mcp">
-          <h3>MCP Agent</h3>
-          <div class="summary-stat">
-            <span class="label">Prompt Tokens</span>
-            <span class="value" id="summary-mcp-prompt">0</span>
-          </div>
-          <div class="summary-stat">
-            <span class="label">Completion Tokens</span>
-            <span class="value" id="summary-mcp-completion">0</span>
-          </div>
-          <div class="summary-stat total">
-            <span class="label">Total Tokens</span>
-            <span class="value" id="summary-mcp-total">0</span>
-          </div>
+  <!-- Session Summary Modal -->
+  <div id="session-summary" class="hidden fixed inset-0 bg-black/80 items-center justify-center z-50">
+    <div class="bg-zinc-900 border border-border rounded-xl p-6 max-w-md w-full mx-4">
+      <h3 class="text-lg font-semibold mb-4">Session Summary</h3>
+      <div class="space-y-4 mb-6">
+        <div class="flex justify-between items-center p-3 bg-zinc-800 rounded-lg">
+          <span class="text-sm text-green-400">MCP Agent</span>
+          <span id="mcp-tokens" class="text-sm font-mono">0 tokens</span>
         </div>
-        
-        <div class="summary-agent codemode">
-          <h3>Codemode Agent</h3>
-          <div class="summary-stat">
-            <span class="label">Prompt Tokens</span>
-            <span class="value" id="summary-codemode-prompt">0</span>
-          </div>
-          <div class="summary-stat">
-            <span class="label">Completion Tokens</span>
-            <span class="value" id="summary-codemode-completion">0</span>
-          </div>
-          <div class="summary-stat total">
-            <span class="label">Total Tokens</span>
-            <span class="value" id="summary-codemode-total">0</span>
-          </div>
+        <div class="flex justify-between items-center p-3 bg-zinc-800 rounded-lg">
+          <span class="text-sm text-orange-400">Codemode Agent</span>
+          <span id="codemode-tokens" class="text-sm font-mono">0 tokens</span>
+        </div>
+        <div class="pt-2 border-t border-border">
+          <p class="text-sm text-muted-foreground">More Efficient:</p>
+          <p id="winner" class="text-base font-semibold mt-1">-</p>
         </div>
       </div>
-      
-      <div class="summary-winner">
-        <div class="label">More Efficient</div>
-        <div class="winner-text" id="summary-winner">-</div>
-      </div>
-      
-      <div class="summary-actions">
-        <button onclick="closeSummary()" class="btn-outline">Close</button>
-        <button onclick="newSession()">New Session</button>
+      <div class="flex gap-3">
+        <button onclick="closeSummary()" class="flex-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">
+          Close
+        </button>
+        <button onclick="newSession()" class="flex-1 px-4 py-2 bg-white text-black font-medium rounded-lg text-sm hover:bg-zinc-200 transition-colors">
+          New Session
+        </button>
       </div>
     </div>
   </div>
 
   <script>
-    // Agent WebSocket connections
+    const SESSION_ID = 'session-v5';
+    
     let mcpWs = null;
     let codemodeWs = null;
     
-    // Message containers
     const mcpMessages = document.getElementById('mcp-messages');
     const codemodeMessages = document.getElementById('codemode-messages');
     
-    // Session ID for DO instances - change this to force new instances
-    const SESSION_ID = 'session-v5';
-    
-    // Connect to agents
-    function connectAgents() {
-      // Connect to MCP Agent
-      const mcpUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/agents/mcp-chat-agent/${SESSION_ID}`;
-      mcpWs = new WebSocket(mcpUrl);
-      
-      mcpWs.onopen = () => {
-        document.getElementById('mcp-status').classList.add('connected');
-        document.getElementById('mcp-status-text').textContent = 'Connected';
-      };
-      
-      mcpWs.onmessage = (event) => {
-        handleMessage('mcp', JSON.parse(event.data));
-      };
-      
-      mcpWs.onclose = () => {
-        document.getElementById('mcp-status').classList.remove('connected');
-        document.getElementById('mcp-status-text').textContent = 'Disconnected';
-        setTimeout(() => connectAgents(), 3000);
-      };
-      
-      // Connect to Codemode Agent
-      const codemodeUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/agents/codemode-chat-agent/${SESSION_ID}`;
-      codemodeWs = new WebSocket(codemodeUrl);
-      
-      codemodeWs.onopen = () => {
-        document.getElementById('codemode-status').classList.add('connected');
-        document.getElementById('codemode-status-text').textContent = 'Connected';
-      };
-      
-      codemodeWs.onmessage = (event) => {
-        handleMessage('codemode', JSON.parse(event.data));
-      };
-      
-      codemodeWs.onclose = () => {
-        document.getElementById('codemode-status').classList.remove('connected');
-        document.getElementById('codemode-status-text').textContent = 'Disconnected';
-      };
-    }
-    
-    // Track streaming responses and usage
-    const streamingMessages = {
+    // Streaming state
+    const streaming = {
       mcp: { element: null, content: '' },
       codemode: { element: null, content: '' }
     };
     
-    // Track token usage per conversation
-    const tokenUsage = {
-      mcp: { promptTokens: 0, completionTokens: 0 },
-      codemode: { promptTokens: 0, completionTokens: 0 }
-    };
+    // Update connection status
+    function updateStatus(agent, connected) {
+      const dot = document.getElementById(`${agent}-status-dot`);
+      const text = document.getElementById(`${agent}-status-text`);
+      if (connected) {
+        dot.className = 'h-2 w-2 rounded-full bg-green-500';
+        text.textContent = 'Connected';
+      } else {
+        dot.className = 'h-2 w-2 rounded-full bg-zinc-500';
+        text.textContent = 'Disconnected';
+      }
+    }
     
+    // Connect to agents
+    function connectAgents() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      
+      // MCP Agent
+      mcpWs = new WebSocket(`${protocol}//${window.location.host}/agents/mcp-chat-agent/${SESSION_ID}`);
+      mcpWs.onopen = () => updateStatus('mcp', true);
+      mcpWs.onclose = () => updateStatus('mcp', false);
+      mcpWs.onmessage = (e) => handleMessage('mcp', JSON.parse(e.data));
+      
+      // Codemode Agent
+      codemodeWs = new WebSocket(`${protocol}//${window.location.host}/agents/codemode-chat-agent/${SESSION_ID}`);
+      codemodeWs.onopen = () => updateStatus('codemode', true);
+      codemodeWs.onclose = () => updateStatus('codemode', false);
+      codemodeWs.onmessage = (e) => handleMessage('codemode', JSON.parse(e.data));
+    }
+    
+    // Handle incoming messages
     function handleMessage(agent, data) {
       const container = agent === 'mcp' ? mcpMessages : codemodeMessages;
-      const streaming = streamingMessages[agent];
+      const state = streaming[agent];
       
-      console.log(`[${agent}] Raw message:`, data);
-      console.log(`[${agent}] Message type:`, data.type);
-      
-      if (data.type === 'cf_agent_use_chat_response') {
-        // Streaming chat response - body is JSON with event data
-        if (data.body) {
-          try {
-            const event = JSON.parse(data.body);
-            console.log(`[${agent}] Event:`, event.type, event);
-            
-            switch (event.type) {
-              case 'text-start':
-                // Start a new text message
-                if (!streaming.element) {
-                  streaming.element = document.createElement('div');
-                  streaming.element.className = 'message assistant';
-                  streaming.content = '';
-                  container.appendChild(streaming.element);
-                }
-                break;
-                
-              case 'text-delta':
-                // Append text chunk
-                if (!streaming.element) {
-                  streaming.element = document.createElement('div');
-                  streaming.element.className = 'message assistant';
-                  streaming.content = '';
-                  container.appendChild(streaming.element);
-                }
-                streaming.content += event.delta || '';
-                // Render as markdown
-                streaming.element.innerHTML = marked.parse(streaming.content);
-                container.scrollTop = container.scrollHeight;
-                break;
-                
-              case 'text-end':
-                // Text complete - ensure final markdown render
-                if (streaming.element && streaming.content) {
-                  streaming.element.innerHTML = marked.parse(streaming.content);
-                }
-                break;
-                
-              case 'tool-input-start':
-              case 'tool-input-available':
-                // Tool call starting
-                const toolInfo = `Tool: ${event.toolName}\nInput: ${JSON.stringify(event.input, null, 2)}`;
-                addMessage(container, 'tool-call', toolInfo, 'Tool Call');
-                break;
-                
-              case 'tool-output-available':
-                // Tool result - check if it's codemode output
-                let resultText = event.output;
-                if (typeof resultText === 'string') {
-                  try {
-                    const parsed = JSON.parse(resultText);
-                    
-                    // Check if this is a codemode result with generated code
-                    if (parsed.code && parsed.result !== undefined) {
-                      // This is a codemode result - show code and result separately
-                      addCodeMessage(container, parsed.code, parsed.result, parsed.success);
-                      break;
-                    }
-                    
-                    resultText = JSON.stringify(parsed, null, 2);
-                  } catch (e) {}
-                }
-                addMessage(container, 'tool-call', typeof resultText === 'string' ? resultText : JSON.stringify(resultText, null, 2), 'Tool Result');
-                break;
-                
-              case 'finish':
-                // Stream finished - check for usage data in messageMetadata
-                console.log(`[${agent}] FINISH EVENT RECEIVED`);
-                console.log(`[${agent}] Full finish event:`, JSON.stringify(event, null, 2));
-                const metadata = event.messageMetadata;
-                console.log(`[${agent}] Finish event metadata:`, metadata);
-                if (metadata && metadata.usage) {
-                  console.log(`[${agent}] Usage data found:`, JSON.stringify(metadata.usage, null, 2));
-                  // Handle both naming conventions (promptTokens/completionTokens and inputTokens/outputTokens)
-                  const promptTokens = metadata.usage.promptTokens || metadata.usage.inputTokens || 0;
-                  const completionTokens = metadata.usage.completionTokens || metadata.usage.outputTokens || 0;
-                  console.log(`[${agent}] Parsed tokens - prompt: ${promptTokens}, completion: ${completionTokens}`);
-                  tokenUsage[agent].promptTokens += promptTokens;
-                  tokenUsage[agent].completionTokens += completionTokens;
-                  console.log(`[${agent}] Updated token usage:`, JSON.stringify(tokenUsage[agent]));
-                  addUsageDisplay(container, tokenUsage[agent], agent);
-                } else {
-                  console.log(`[${agent}] NO USAGE DATA in metadata`);
-                }
-                break;
-            }
-          } catch (e) {
-            // Body might be plain text or empty
-            if (data.body.trim()) {
-              console.log(`[${agent}] Non-JSON body:`, data.body);
-            }
+      if (data.type === 'cf_agent_use_chat_response' && data.body) {
+        try {
+          const event = JSON.parse(data.body);
+          
+          switch (event.type) {
+            case 'text-start':
+              state.element = createAssistantMessage(agent);
+              state.content = '';
+              container.appendChild(state.element);
+              break;
+              
+            case 'text-delta':
+              if (!state.element) {
+                state.element = createAssistantMessage(agent);
+                state.content = '';
+                container.appendChild(state.element);
+              }
+              state.content += event.delta || '';
+              const contentEl = state.element.querySelector('.message-content');
+              if (contentEl) {
+                contentEl.textContent = state.content;
+              }
+              container.scrollTop = container.scrollHeight;
+              break;
+              
+            case 'text-end':
+              state.element = null;
+              state.content = '';
+              break;
+              
+            case 'tool-input-start':
+              // Tool call starting - just show the tool name for now
+              console.log(`[${agent}] TOOL INPUT START:`, event);
+              addToolCall(container, event.toolName, null, agent);
+              break;
+              
+            case 'tool-input-available':
+              console.log(`[${agent}] TOOL INPUT AVAILABLE:`, event);
+              addToolCall(container, event.toolName, event.input, agent);
+              break;
+              
+            case 'tool-output-available':
+              console.log(`[${agent}] TOOL OUTPUT AVAILABLE:`, event);
+              addToolResult(container, event.output, agent);
+              break;
+              
+            case 'tool-call':
+              // Alternative event name
+              console.log(`[${agent}] TOOL CALL:`, event);
+              addToolCall(container, event.toolName || event.name, event.input || event.args, agent);
+              break;
+              
+            case 'tool-result':
+              // Alternative event name  
+              console.log(`[${agent}] TOOL RESULT:`, event);
+              addToolResult(container, event.result || event.output, agent);
+              break;
+              
+            default:
+              console.log(`[${agent}] UNHANDLED EVENT:`, event.type, event);
           }
+        } catch (e) {
+          console.error(`[${agent}] Parse error:`, e);
         }
-        
-        // If done, finalize the streaming message
-        if (data.done && streaming.element) {
-          // Add to message history
-          if (agent === 'mcp') {
-            mcpChatMessages.push({ role: 'assistant', content: streaming.content });
-          } else {
-            codemodeChatMessages.push({ role: 'assistant', content: streaming.content });
-          }
-          streaming.element = null;
-          streaming.content = '';
-        }
-      } else if (data.type === 'cf_agent_chat_messages') {
-        // Initial messages sync - ignore for now
-        console.log(`[${agent}] Messages sync:`, data.messages);
       }
     }
     
-    function addMessage(container, type, content, label) {
+    // Create assistant message element
+    function createAssistantMessage(agent) {
       const div = document.createElement('div');
-      div.className = `message ${type}`;
-      
-      if (label) {
-        const labelEl = document.createElement('div');
-        labelEl.className = 'message-label';
-        labelEl.textContent = label;
-        div.appendChild(labelEl);
-      }
-      
-      if (type === 'tool-call' || type === 'code') {
-        const pre = document.createElement('pre');
-        const code = document.createElement('code');
-        code.textContent = content;
-        pre.appendChild(code);
-        div.appendChild(pre);
-      } else {
-        div.textContent = content;
-      }
-      
+      const color = agent === 'mcp' ? 'border-green-500/30' : 'border-orange-500/30';
+      div.className = `p-3 rounded-lg bg-zinc-900 border-l-2 ${color}`;
+      div.innerHTML = '<div class="message-content text-sm"></div>';
+      return div;
+    }
+    
+    // Add user message
+    function addUserMessage(container, text) {
+      const div = document.createElement('div');
+      div.className = 'p-3 rounded-lg bg-zinc-800 ml-8';
+      div.innerHTML = `<div class="text-sm">${escapeHtml(text)}</div>`;
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
     
-    function addUsageDisplay(container, usage, agent) {
-      // Remove any existing usage display in this container
-      const existing = container.querySelector('.token-usage');
-      if (existing) {
-        existing.remove();
-      }
-      
-      const total = usage.promptTokens + usage.completionTokens;
+    // Add tool call
+    function addToolCall(container, toolName, input, agent) {
+      // Skip if no input yet (tool-input-start without data)
+      if (!input) return;
       
       const div = document.createElement('div');
-      div.className = 'token-usage';
+      const color = agent === 'mcp' ? 'text-green-400' : 'text-orange-400';
+      div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
       div.innerHTML = `
-        <span><span class="label">Prompt:</span> <span class="value">${usage.promptTokens.toLocaleString()}</span></span>
-        <span><span class="label">Completion:</span> <span class="value">${usage.completionTokens.toLocaleString()}</span></span>
-        <span><span class="label">Total:</span> <span class="value total">${total.toLocaleString()}</span></span>
+        <div class="text-xs ${color} font-medium mb-2">Tool: ${escapeHtml(toolName || 'unknown')}</div>
+        <pre class="text-xs font-mono text-muted-foreground overflow-x-auto">${escapeHtml(JSON.stringify(input, null, 2))}</pre>
       `;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+    
+    // Generate a friendly summary from codemode result
+    function generateSummary(result) {
+      if (typeof result === 'string') {
+        // Try to parse embedded JSON in the result string
+        const jsonMatch = result.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const data = JSON.parse(jsonMatch[0]);
+            return generateSummaryFromData(data, result);
+          } catch (e) {}
+        }
+        // Return first line as summary
+        return result.split('\n')[0];
+      }
+      return generateSummaryFromData(result, '');
+    }
+    
+    function generateSummaryFromData(data, originalText) {
+      // Event created
+      if (data.title && data.date && data.id) {
+        const date = new Date(data.date);
+        const dateStr = date.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          month: 'long', 
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        });
+        const location = data.location ? ` at ${data.location}` : '';
+        if (originalText.includes('created')) {
+          return `Event "${data.title}" created for ${dateStr}${location}`;
+        } else if (originalText.includes('updated')) {
+          return `Event "${data.title}" updated - ${dateStr}${location}`;
+        } else if (originalText.includes('deleted')) {
+          return `Event "${data.title}" has been deleted`;
+        }
+        return `Event: ${data.title} - ${dateStr}${location}`;
+      }
+      
+      // Profile
+      if (data.first_name && data.last_name && data.email) {
+        return `Profile: ${data.first_name} ${data.last_name} (${data.email})`;
+      }
+      
+      // RSVP
+      if (data.status && data.event_id) {
+        return `RSVP status: ${data.status}`;
+      }
+      
+      // List of events
+      if (Array.isArray(data) && data.length > 0 && data[0].title) {
+        return `Found ${data.length} event${data.length > 1 ? 's' : ''}`;
+      }
+      
+      // Fallback
+      return originalText.split('\n')[0] || 'Operation completed';
+    }
+    
+    // Add tool result
+    function addToolResult(container, output, agent) {
+      const div = document.createElement('div');
+      
+      // Try to parse output
+      let parsed = null;
+      if (typeof output === 'string') {
+        try {
+          parsed = JSON.parse(output);
+        } catch (e) {}
+      } else if (typeof output === 'object') {
+        parsed = output;
+      }
+      
+      if (parsed && parsed.code && parsed.result !== undefined) {
+        // Codemode result with code - show details first, then friendly summary
+        const statusColor = parsed.success ? 'text-green-400' : 'text-red-400';
+        const summary = parsed.success ? generateSummary(parsed.result) : (parsed.error || 'Operation failed');
+        
+        div.className = 'space-y-2';
+        div.innerHTML = `
+          <details class="p-3 rounded-lg bg-zinc-900/50 border border-border">
+            <summary class="text-xs text-orange-400 font-medium cursor-pointer">View Generated Code & Details</summary>
+            <div class="mt-3 space-y-3">
+              <div>
+                <div class="text-xs text-muted-foreground mb-1">Code</div>
+                <pre class="text-xs font-mono bg-black/30 p-2 rounded overflow-x-auto">${escapeHtml(parsed.code)}</pre>
+              </div>
+              <div>
+                <div class="text-xs text-muted-foreground mb-1">Raw Result</div>
+                <pre class="text-xs font-mono bg-black/30 p-2 rounded overflow-x-auto">${escapeHtml(typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result, null, 2))}</pre>
+              </div>
+            </div>
+          </details>
+          <div class="p-3 rounded-lg bg-zinc-900 border-l-2 border-orange-500/30">
+            <div class="text-sm ${parsed.success ? '' : 'text-red-400'}">${escapeHtml(summary)}</div>
+          </div>
+        `;
+      } else {
+        // Regular tool result (MCP)
+        const color = agent === 'mcp' ? 'text-green-400' : 'text-orange-400';
+        const displayText = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+        div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
+        div.innerHTML = `
+          <div class="text-xs ${color} font-medium mb-2">Result</div>
+          <pre class="text-xs font-mono text-muted-foreground overflow-x-auto">${escapeHtml(displayText)}</pre>
+        `;
+      }
       
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
     
-    function addCodeMessage(container, code, result, success) {
-      // Create the code block
-      const codeDiv = document.createElement('div');
-      codeDiv.className = 'message code-generated';
-      
-      const codeHeader = document.createElement('div');
-      codeHeader.className = 'code-header';
-      codeHeader.innerHTML = '<span>Generated Code</span>';
-      codeDiv.appendChild(codeHeader);
-      
-      const codePre = document.createElement('pre');
-      const codeEl = document.createElement('code');
-      codeEl.textContent = code;
-      codePre.appendChild(codeEl);
-      codeDiv.appendChild(codePre);
-      
-      container.appendChild(codeDiv);
-      
-      // Create the result block
-      const resultDiv = document.createElement('div');
-      resultDiv.className = 'message code-result';
-      
-      const resultHeader = document.createElement('div');
-      resultHeader.className = 'result-header';
-      resultHeader.textContent = success ? 'Execution Result' : 'Execution Error';
-      resultDiv.appendChild(resultHeader);
-      
-      const resultPre = document.createElement('pre');
-      const resultCode = document.createElement('code');
-      resultCode.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-      resultPre.appendChild(resultCode);
-      resultDiv.appendChild(resultPre);
-      
-      container.appendChild(resultDiv);
-      container.scrollTop = container.scrollHeight;
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
     
-    // Track messages for each agent
+    // Message history for each agent
     let mcpChatMessages = [];
     let codemodeChatMessages = [];
     
+    // Send message to both agents
     function sendMessage() {
       const input = document.getElementById('user-input');
       const message = input.value.trim();
-      
       if (!message) return;
       
       // Reset streaming state
-      streamingMessages.mcp.element = null;
-      streamingMessages.mcp.content = '';
-      streamingMessages.codemode.element = null;
-      streamingMessages.codemode.content = '';
+      streaming.mcp = { element: null, content: '' };
+      streaming.codemode = { element: null, content: '' };
       
       // Add user message to both panels
-      addMessage(mcpMessages, 'user', message);
-      addMessage(codemodeMessages, 'user', message);
+      addUserMessage(mcpMessages, message);
+      addUserMessage(codemodeMessages, message);
       
-      // Add to message history (messages need an id for AIChatAgent)
+      // Add to message history
       const userMessage = { id: crypto.randomUUID(), role: 'user', content: message };
       mcpChatMessages.push({...userMessage, id: crypto.randomUUID()});
       codemodeChatMessages.push({...userMessage, id: crypto.randomUUID()});
       
-      // Create payload in the format AIChatAgent expects
+      // Create payload in format AIChatAgent expects
       const createPayload = (messages) => JSON.stringify({
         type: 'cf_agent_use_chat_request',
         id: crypto.randomUUID(),
@@ -890,106 +449,82 @@
         }
       });
       
-      if (mcpWs && mcpWs.readyState === WebSocket.OPEN) {
+      if (mcpWs?.readyState === WebSocket.OPEN) {
         mcpWs.send(createPayload(mcpChatMessages));
       }
-      
-      if (codemodeWs && codemodeWs.readyState === WebSocket.OPEN) {
+      if (codemodeWs?.readyState === WebSocket.OPEN) {
         codemodeWs.send(createPayload(codemodeChatMessages));
       }
       
       input.value = '';
     }
     
+    // End session - show summary
     async function endSession() {
-      // Fetch usage from the server
       try {
-        const [mcpResponse, codemodeResponse] = await Promise.all([
-          fetch('/api/usage/mcp'),
-          fetch('/api/usage/codemode')
-        ]);
+        const res = await fetch('/api/usage');
+        const usage = await res.json();
         
-        const mcpUsage = await mcpResponse.json();
-        const codemodeUsage = await codemodeResponse.json();
+        const mcpTotal = (usage.mcp?.inputTokens || 0) + (usage.mcp?.outputTokens || 0);
+        const codemodeTotal = (usage.codemode?.inputTokens || 0) + (usage.codemode?.outputTokens || 0);
         
-        console.log('MCP Usage:', mcpUsage);
-        console.log('Codemode Usage:', codemodeUsage);
+        document.getElementById('mcp-tokens').textContent = `${mcpTotal.toLocaleString()} tokens`;
+        document.getElementById('codemode-tokens').textContent = `${codemodeTotal.toLocaleString()} tokens`;
         
-        const mcpTotal = (mcpUsage.inputTokens || 0) + (mcpUsage.outputTokens || 0);
-        const codemodeTotal = (codemodeUsage.inputTokens || 0) + (codemodeUsage.outputTokens || 0);
-        
-        // Update summary display
-        document.getElementById('summary-mcp-prompt').textContent = (mcpUsage.inputTokens || 0).toLocaleString();
-        document.getElementById('summary-mcp-completion').textContent = (mcpUsage.outputTokens || 0).toLocaleString();
-        document.getElementById('summary-mcp-total').textContent = mcpTotal.toLocaleString();
-        
-        document.getElementById('summary-codemode-prompt').textContent = (codemodeUsage.inputTokens || 0).toLocaleString();
-        document.getElementById('summary-codemode-completion').textContent = (codemodeUsage.outputTokens || 0).toLocaleString();
-        document.getElementById('summary-codemode-total').textContent = codemodeTotal.toLocaleString();
-        
-        // Determine winner
-        const winnerEl = document.getElementById('summary-winner');
+        const winner = document.getElementById('winner');
         if (mcpTotal === 0 && codemodeTotal === 0) {
-          winnerEl.textContent = 'No tokens used yet';
-          winnerEl.className = 'winner-text tie';
+          winner.textContent = 'No messages sent yet';
+          winner.className = 'text-base font-semibold text-muted-foreground mt-1';
         } else if (mcpTotal === codemodeTotal) {
-          winnerEl.textContent = "It's a tie!";
-          winnerEl.className = 'winner-text tie';
+          winner.textContent = "It's a tie!";
+          winner.className = 'text-base font-semibold text-muted-foreground mt-1';
         } else if (mcpTotal < codemodeTotal) {
-          const savings = ((codemodeTotal - mcpTotal) / codemodeTotal * 100).toFixed(1);
-          winnerEl.textContent = `MCP Agent (${savings}% fewer tokens)`;
-          winnerEl.className = 'winner-text mcp';
+          const pct = ((codemodeTotal - mcpTotal) / codemodeTotal * 100).toFixed(0);
+          winner.textContent = `MCP Agent (${pct}% fewer tokens)`;
+          winner.className = 'text-base font-semibold text-green-400 mt-1';
         } else {
-          const savings = ((mcpTotal - codemodeTotal) / mcpTotal * 100).toFixed(1);
-          winnerEl.textContent = `Codemode Agent (${savings}% fewer tokens)`;
-          winnerEl.className = 'winner-text codemode';
+          const pct = ((mcpTotal - codemodeTotal) / mcpTotal * 100).toFixed(0);
+          winner.textContent = `Codemode Agent (${pct}% fewer tokens)`;
+          winner.className = 'text-base font-semibold text-orange-400 mt-1';
         }
-      } catch (error) {
-        console.error('Failed to fetch usage:', error);
-      }
-      
-      // Show summary
-      document.getElementById('session-summary').classList.add('visible');
-    }
-    
-    function closeSummary() {
-      document.getElementById('session-summary').classList.remove('visible');
-    }
-    
-    async function newSession() {
-      // Reset server-side usage counters
-      try {
-        await fetch('/api/usage/reset', { method: 'POST' });
       } catch (e) {
-        console.error('Failed to reset server usage:', e);
+        console.error('Failed to fetch usage:', e);
       }
       
-      // Reset local token usage
-      tokenUsage.mcp = { promptTokens: 0, completionTokens: 0 };
-      tokenUsage.codemode = { promptTokens: 0, completionTokens: 0 };
+      document.getElementById('session-summary').classList.remove('hidden');
+      document.getElementById('session-summary').classList.add('flex');
+    }
+    
+    // Close summary modal
+    function closeSummary() {
+      document.getElementById('session-summary').classList.add('hidden');
+      document.getElementById('session-summary').classList.remove('flex');
+    }
+    
+    // Start new session
+    async function newSession() {
+      try {
+        await fetch('/api/clear', { method: 'POST' });
+        await fetch('/api/admin/reset-fluma', { method: 'POST' });
+      } catch (e) {}
       
-      // Reset message history
+      // Reset local state
+      mcpMessages.innerHTML = '';
+      codemodeMessages.innerHTML = '';
+      streaming.mcp = { element: null, content: '' };
+      streaming.codemode = { element: null, content: '' };
       mcpChatMessages = [];
       codemodeChatMessages = [];
       
-      // Clear message displays
-      mcpMessages.innerHTML = '';
-      codemodeMessages.innerHTML = '';
-      
-      // Reset streaming state
-      streamingMessages.mcp = { element: null, content: '' };
-      streamingMessages.codemode = { element: null, content: '' };
-      
-      // Close summary
       closeSummary();
       
-      // Reconnect to get fresh agents (optional - forces new DO instances)
+      // Reconnect
       if (mcpWs) mcpWs.close();
       if (codemodeWs) codemodeWs.close();
       setTimeout(connectAgents, 500);
     }
     
-    // Connect on page load
+    // Initialize
     connectAgents();
   </script>
 </body>

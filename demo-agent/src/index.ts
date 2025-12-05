@@ -25,6 +25,22 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 // Session ID for DO instances - must match the frontend
 const SESSION_ID = 'session-v5';
 
+// Get usage for both agents (combined)
+app.get('/api/usage', async (c) => {
+  const mcpId = c.env.MCP_CHAT_AGENT.idFromName(SESSION_ID);
+  const mcpStub = c.env.MCP_CHAT_AGENT.get(mcpId) as any;
+  const mcpUsage = await mcpStub.getUsage();
+  
+  const codemodeId = c.env.CODEMODE_CHAT_AGENT.idFromName(SESSION_ID);
+  const codemodeStub = c.env.CODEMODE_CHAT_AGENT.get(codemodeId) as any;
+  const codemodeUsage = await codemodeStub.getUsage();
+  
+  return c.json({
+    mcp: mcpUsage,
+    codemode: codemodeUsage
+  });
+});
+
 // Get usage for MCP agent
 app.get('/api/usage/mcp', async (c) => {
   const id = c.env.MCP_CHAT_AGENT.idFromName(SESSION_ID);
