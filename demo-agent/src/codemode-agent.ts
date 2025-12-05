@@ -4,6 +4,7 @@ import {
   streamText,
   generateObject,
   tool,
+  stepCountIs,
   type StreamTextOnFinishCallback,
   type ToolSet,
 } from 'ai';
@@ -142,10 +143,24 @@ User request: ${functionDescription}`,
           // Execute the generated code using Dynamic Worker Loader
           const result = await this.executeCode(generatedCode);
 
+          // Return a cleaner format for the LLM to interpret
+          // If result is a string with "Found X", try to parse and return just the data
+          let cleanResult = result;
+          if (typeof result === 'string') {
+            // Try to extract JSON data from Fluma responses like "Found 4 event(s):\n{...}"
+            const jsonMatch = result.match(/\n(\[[\s\S]*\]|\{[\s\S]*\})$/);
+            if (jsonMatch) {
+              try {
+                cleanResult = JSON.parse(jsonMatch[1]);
+              } catch {
+                cleanResult = result;
+              }
+            }
+          }
+
           return JSON.stringify({
             success: true,
-            code: generatedCode,
-            result,
+            data: cleanResult,
           }, null, 2);
         } catch (error: any) {
           return JSON.stringify({
@@ -165,21 +180,26 @@ ${toolDescriptions}
 
 When users ask about events, RSVPs, or their profile, use the codemode tool with a clear function description.
 
-IMPORTANT: After executing code, always provide a detailed, human-friendly summary of the results. For events, include:
-- Event title
-- Location  
-- Date and time (formatted nicely)
-- Host information
-- RSVP status if applicable
+IMPORTANT: After executing code, provide a warm, conversational response like a helpful assistant would. Include:
+- Use **bold** for important details like event names
+- Format the date/time in a friendly way (e.g., "December 10, 2024 at 6:00 PM")
+- Include the event ID using backticks (e.g., \`abc-123\`) so users can reference it
+- Offer helpful follow-up suggestions (e.g., "Would you like to add a description?" or "Would you like to invite anyone?")
+- Be encouraging and personable
 
-Never just say "Found X events" - always list the actual event details.`;
+Example response for creating an event:
+"Perfect! I've created your event **Event Name** for December 10, 2024 at 6:00 PM at Location. Your event ID is: \`abc-123\`
+
+You can now share this event with others, and they'll be able to RSVP. Would you like to add a description or make any other changes?"
+
+Never give bare, robotic responses - be friendly and helpful!`;
 
     const result = streamText({
       model,
       system: systemPrompt,
       messages: convertToModelMessages(this.messages),
       tools: { codemode: codemodeTool },
-      maxSteps: 2,
+      stopWhen: stepCountIs(3),
       onFinish: async (event) => {
         // Accumulate usage in DO storage
         const usage = event.usage;
