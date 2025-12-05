@@ -19,34 +19,55 @@ async function callFlumaTool(
   mcpUrl: string,
   sessionId: string
 ): Promise<string> {
-  const httpUrl = mcpUrl.replace('/sse', '/mcp');
-  
-  const response = await fetch(httpUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream',
-      'mcp-session-id': sessionId,
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: 'tools/call',
-      params: {
-        name: toolName,
-        arguments: args,
+  try {
+    const httpUrl = mcpUrl.replace('/sse', '/mcp');
+    
+    const response = await fetch(httpUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
       },
-    }),
-  });
-  
-  const responseText = await response.text();
-  const result = parseSSEResponse(responseText);
-  
-  if (result.error) {
-    throw new Error(result.error.message);
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: args,
+        },
+      }),
+    });
+    
+    if (!response.ok) {
+      return JSON.stringify({
+        success: false,
+        error: `HTTP error: ${response.status} ${response.statusText}`,
+      });
+    }
+    
+    const responseText = await response.text();
+    const result = parseSSEResponse(responseText);
+    
+    if (result.error) {
+      return JSON.stringify({
+        success: false,
+        error: result.error.message || 'Unknown MCP error',
+      });
+    }
+    
+    const content = result.result?.content?.[0]?.text || JSON.stringify(result.result);
+    return JSON.stringify({
+      success: true,
+      data: content,
+    });
+  } catch (error: any) {
+    return JSON.stringify({
+      success: false,
+      error: error.message || 'Network error occurred',
+    });
   }
-  
-  return result.result?.content?.[0]?.text || JSON.stringify(result.result);
 }
 
 // Create all Fluma tools in AI SDK format
@@ -218,9 +239,4 @@ export function createFlumaTools(mcpUrl: string, sessionId: string = '') {
   };
 }
 
-// Get tool descriptions for codemode prompt
-export function getToolDescriptions(tools: ReturnType<typeof createFlumaTools>): string {
-  return Object.entries(tools)
-    .map(([name, t]) => `- ${name}: ${(t as any).description}`)
-    .join('\n');
-}
+

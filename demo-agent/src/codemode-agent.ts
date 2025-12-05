@@ -9,7 +9,6 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import { createGatewayModel, createCodeGenModel } from './model';
-import { createFlumaTools, getToolDescriptions } from './tools';
 
 type Env = {
   CF_ACCOUNT_ID: string;
@@ -21,85 +20,14 @@ type Env = {
   CODE_EXECUTOR: any; // WorkerLoader binding
 };
 
-/**
- * Convert a tool name to PascalCase for TypeScript interface naming
- */
-function toCamelCase(str: string): string {
-  return str
-    .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-    .replace(/^[a-z]/, (letter) => letter.toUpperCase());
-}
-
-/**
- * Get the TypeScript type string for a Zod schema
- */
-function getZodTypeString(schema: z.ZodTypeAny): string {
-  if (schema instanceof z.ZodString) return 'string';
-  if (schema instanceof z.ZodNumber) return 'number';
-  if (schema instanceof z.ZodBoolean) return 'boolean';
-  if (schema instanceof z.ZodEnum) {
-    const opts = (schema as z.ZodEnum<any>).options;
-    return opts.map((o: string) => `'${o}'`).join(' | ');
-  }
-  if (schema instanceof z.ZodOptional) return getZodTypeString(schema.unwrap());
-  if (schema instanceof z.ZodArray) return `${getZodTypeString(schema.element)}[]`;
-  if (schema instanceof z.ZodObject) return 'object';
-  return 'any';
-}
-
-/**
- * Generate TypeScript type definitions from the tools.
- * This creates proper interface definitions with JSDoc comments.
- */
-function generateTypes(tools: ReturnType<typeof createFlumaTools>): string {
-  let availableTools = '';
-  let availableTypes = '';
-
-  for (const [toolName, t] of Object.entries(tools)) {
-    const toolDef = t as any;
-    const inputSchema = toolDef.inputSchema as z.ZodObject<any>;
-    const description = toolDef.description || '';
-    const shape = inputSchema.shape;
-
-    // Generate input interface
-    const inputTypeName = `${toCamelCase(toolName)}Input`;
-    const inputFields = Object.entries(shape).map(([key, s]) => {
-      const zodSchema = s as z.ZodTypeAny;
-      const isOptional = zodSchema.isOptional?.() || zodSchema instanceof z.ZodOptional;
-      const fieldType = getZodTypeString(zodSchema);
-      const fieldDesc = zodSchema.description;
-      let field = '';
-      if (fieldDesc) {
-        field += `  /** ${fieldDesc} */\n`;
-      }
-      field += `  ${key}${isOptional ? '?' : ''}: ${fieldType};`;
-      return field;
-    }).join('\n');
-
-    availableTypes += `\ninterface ${inputTypeName} {\n${inputFields || '  [key: string]: unknown;'}\n}`;
-
-    // Output type is generic since MCP returns dynamic data
-    const outputTypeName = `${toCamelCase(toolName)}Output`;
-    availableTypes += `\ninterface ${outputTypeName} { [key: string]: any; }`;
-
-    // Add tool to the codemode interface with JSDoc
-    availableTools += `\n  /**`;
-    availableTools += `\n   * ${description}`;
-    availableTools += `\n   */`;
-    availableTools += `\n  ${toolName}: (input: ${inputTypeName}) => Promise<${outputTypeName}>;`;
-    availableTools += '\n';
-  }
-
-  // Wrap tools in the codemode declaration
-  availableTools = `\ndeclare const codemode: {${availableTools}};`;
-
-  return `${availableTypes}\n${availableTools}`;
-}
-
 // Session ID for the MCP agent DO - must match frontend
 const MCP_AGENT_SESSION = 'session-v5';
 
 export class CodemodeChatAgent extends AIChatAgent<Env> {
+  // In-memory cache for types and descriptions (per DO instance)
+  private cachedTypes: string | null = null;
+  private cachedDescriptions: string | null = null;
+
   /**
    * Get the shared MCP session ID from the MCP agent.
    * This ensures both agents talk to the same Fluma DO.
@@ -108,6 +36,46 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
     const mcpAgentId = this.env.MCP_CHAT_AGENT.idFromName(MCP_AGENT_SESSION);
     const mcpAgentStub = this.env.MCP_CHAT_AGENT.get(mcpAgentId) as any;
     return await mcpAgentStub.getSharedSessionId();
+  }
+
+  /**
+   * Fetch and cache TypeScript type definitions from Fluma.
+   * Cached in memory for the lifetime of this DO instance.
+   */
+  private async getToolTypes(): Promise<string> {
+    if (this.cachedTypes) {
+      return this.cachedTypes;
+    }
+
+    const typesUrl = this.env.FLUMA_MCP_URL.replace('/sse', '/types');
+    const response = await fetch(typesUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch types: ${response.status} ${response.statusText}`);
+    }
+    
+    this.cachedTypes = await response.text();
+    return this.cachedTypes;
+  }
+
+  /**
+   * Fetch and cache tool descriptions from Fluma.
+   * Cached in memory for the lifetime of this DO instance.
+   */
+  private async getToolDescriptions(): Promise<string> {
+    if (this.cachedDescriptions) {
+      return this.cachedDescriptions;
+    }
+
+    const descriptionsUrl = this.env.FLUMA_MCP_URL.replace('/sse', '/descriptions');
+    const response = await fetch(descriptionsUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch descriptions: ${response.status} ${response.statusText}`);
+    }
+    
+    this.cachedDescriptions = await response.text();
+    return this.cachedDescriptions;
   }
 
   async onChatMessage(onFinish: StreamTextOnFinishCallback<ToolSet>) {
@@ -123,11 +91,11 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
       CF_AIG_TOKEN: this.env.CF_AIG_TOKEN,
     });
 
-    const flumaTools = createFlumaTools(this.env.FLUMA_MCP_URL);
-    const toolDescriptions = getToolDescriptions(flumaTools);
-
-    // Generate TypeScript types for the tools
-    const generatedTypes = await generateTypes(flumaTools);
+    // Fetch types and descriptions from Fluma (cached after first fetch)
+    const [generatedTypes, toolDescriptions] = await Promise.all([
+      this.getToolTypes(),
+      this.getToolDescriptions(),
+    ]);
 
     // Create the codemode meta-tool
     const codemodeTool = tool({

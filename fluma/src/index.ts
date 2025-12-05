@@ -1,8 +1,26 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
-import { z } from "zod";
 import { SCHEMA, type Event, type User, type RSVP } from "./db/schema";
 import { EmailService } from "./services/email";
+import {
+  toolDefinitions,
+  getProfileSchema,
+  updateProfileSchema,
+  listEventsSchema,
+  getEventSchema,
+  createEventSchema,
+  updateEventSchema,
+  deleteEventSchema,
+  listEventRsvpsSchema,
+  addCohostSchema,
+  removeCohostSchema,
+  rsvpSchema,
+  updateRsvpSchema,
+  cancelRsvpSchema,
+  getMyRsvpsSchema,
+  getMyEventsSchema,
+} from "./tools/schemas";
+import { cachedTypeScript, cachedToolDescriptions } from "./tools/type-generator";
 
 // Simple props - no OAuth needed
 type Props = Record<string, unknown>;
@@ -80,6 +98,26 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
     `;
   }
 
+  // Handle internal admin requests
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    
+    if (url.pathname === "/reset" && request.method === "POST") {
+      this.initDB();
+      // Clear all events, rsvps, and event_hosts (keep users)
+      this.ctx.storage.sql.exec("DELETE FROM event_hosts");
+      this.ctx.storage.sql.exec("DELETE FROM rsvps");
+      this.ctx.storage.sql.exec("DELETE FROM events");
+      
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    // Fall through to parent handler for MCP requests
+    return super.fetch(request);
+  }
+
   async init() {
     // Initialize database
     this.initDB();
@@ -93,8 +131,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "get_profile",
-      "Get your user profile",
-      {},
+      toolDefinitions.get_profile.description,
+      getProfileSchema.shape,
       async () => {
         const user = this.ensureUser();
         return {
@@ -115,12 +153,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "update_profile",
-      "Update your user profile",
-      {
-        first_name: z.string().optional().describe("Your first name"),
-        last_name: z.string().optional().describe("Your last name"),
-        email: z.string().email().optional().describe("Your email address"),
-      },
+      toolDefinitions.update_profile.description,
+      updateProfileSchema.shape,
       async ({ first_name, last_name, email }) => {
         const user = this.ensureUser();
         
@@ -154,11 +188,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "list_events",
-      "List all events with optional filtering",
-      {
-        filter: z.enum(["upcoming", "past", "hosting", "attending", "all"]).optional()
-          .describe("Filter events: upcoming (default), past, hosting (events you host), attending (events you RSVP'd to), all"),
-      },
+      toolDefinitions.list_events.description,
+      listEventsSchema.shape,
       async ({ filter = "upcoming" }) => {
         const user = this.ensureUser();
         const now = new Date().toISOString();
@@ -226,10 +257,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "get_event",
-      "Get details of a specific event",
-      {
-        event_id: z.string().describe("The event ID"),
-      },
+      toolDefinitions.get_event.description,
+      getEventSchema.shape,
       async ({ event_id }) => {
         const events = this.sql<any>`
           SELECT e.*, u.first_name as host_first_name, u.last_name as host_last_name, u.email as host_email
@@ -278,13 +307,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "create_event",
-      "Create a new event (you will be the host)",
-      {
-        title: z.string().describe("Event title"),
-        description: z.string().optional().describe("Event description"),
-        location: z.string().describe("Event location"),
-        date: z.string().describe("Event date and time (ISO 8601 format, e.g., 2024-12-25T18:00:00Z)"),
-      },
+      toolDefinitions.create_event.description,
+      createEventSchema.shape,
       async ({ title, description, location, date }) => {
         const user = this.ensureUser();
         const eventId = crypto.randomUUID();
@@ -306,14 +330,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "update_event",
-      "Update an event you host (will notify attendees)",
-      {
-        event_id: z.string().describe("The event ID"),
-        title: z.string().optional().describe("New event title"),
-        description: z.string().optional().describe("New event description"),
-        location: z.string().optional().describe("New event location"),
-        date: z.string().optional().describe("New event date (ISO 8601 format)"),
-      },
+      toolDefinitions.update_event.description,
+      updateEventSchema.shape,
       async ({ event_id, title, description, location, date }) => {
         const user = this.ensureUser();
 
@@ -371,10 +389,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "delete_event",
-      "Delete an event you host (will notify attendees)",
-      {
-        event_id: z.string().describe("The event ID"),
-      },
+      toolDefinitions.delete_event.description,
+      deleteEventSchema.shape,
       async ({ event_id }) => {
         const user = this.ensureUser();
 
@@ -412,12 +428,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "list_event_rsvps",
-      "List all RSVPs for an event you host",
-      {
-        event_id: z.string().describe("The event ID"),
-        status: z.enum(["going", "maybe", "not_going", "all"]).optional()
-          .describe("Filter by RSVP status (default: all)"),
-      },
+      toolDefinitions.list_event_rsvps.description,
+      listEventRsvpsSchema.shape,
       async ({ event_id, status = "all" }) => {
         const user = this.ensureUser();
 
@@ -457,11 +469,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "add_cohost",
-      "Add a co-host to your event",
-      {
-        event_id: z.string().describe("The event ID"),
-        user_email: z.string().email().describe("Email of the user to add as co-host"),
-      },
+      toolDefinitions.add_cohost.description,
+      addCohostSchema.shape,
       async ({ event_id, user_email }) => {
         const user = this.ensureUser();
 
@@ -500,11 +509,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "remove_cohost",
-      "Remove a co-host from your event",
-      {
-        event_id: z.string().describe("The event ID"),
-        user_email: z.string().email().describe("Email of the co-host to remove"),
-      },
+      toolDefinitions.remove_cohost.description,
+      removeCohostSchema.shape,
       async ({ event_id, user_email }) => {
         const user = this.ensureUser();
 
@@ -538,11 +544,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "rsvp",
-      "RSVP to an event",
-      {
-        event_id: z.string().describe("The event ID"),
-        status: z.enum(["going", "maybe", "not_going"]).describe("Your RSVP status"),
-      },
+      toolDefinitions.rsvp.description,
+      rsvpSchema.shape,
       async ({ event_id, status }) => {
         const user = this.ensureUser();
 
@@ -583,11 +586,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "update_rsvp",
-      "Update your RSVP status for an event",
-      {
-        event_id: z.string().describe("The event ID"),
-        status: z.enum(["going", "maybe", "not_going"]).describe("Your new RSVP status"),
-      },
+      toolDefinitions.update_rsvp.description,
+      updateRsvpSchema.shape,
       async ({ event_id, status }) => {
         const user = this.ensureUser();
 
@@ -612,10 +612,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "cancel_rsvp",
-      "Cancel your RSVP for an event",
-      {
-        event_id: z.string().describe("The event ID"),
-      },
+      toolDefinitions.cancel_rsvp.description,
+      cancelRsvpSchema.shape,
       async ({ event_id }) => {
         const user = this.ensureUser();
 
@@ -640,8 +638,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "get_my_rsvps",
-      "Get all events you've RSVP'd to",
-      {},
+      toolDefinitions.get_my_rsvps.description,
+      getMyRsvpsSchema.shape,
       async () => {
         const user = this.ensureUser();
 
@@ -667,8 +665,8 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
 
     this.server.tool(
       "get_my_events",
-      "Get all events you're hosting",
-      {},
+      toolDefinitions.get_my_events.description,
+      getMyEventsSchema.shape,
       async () => {
         const user = this.ensureUser();
 
@@ -720,6 +718,38 @@ const sseHandler = FlumaMCP.serveSSE("/sse");
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    
+    // Types endpoint - returns TypeScript definitions for codemode agent
+    if (url.pathname === "/types" && request.method === "GET") {
+      return new Response(cachedTypeScript, {
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    
+    // Descriptions endpoint - returns tool descriptions for system prompts
+    if (url.pathname === "/descriptions" && request.method === "GET") {
+      return new Response(cachedToolDescriptions, {
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    
+    // Admin endpoint to reset all data
+    if (url.pathname === "/admin/reset" && request.method === "POST") {
+      // Get the DO instance and clear all data
+      // We need to use the same DO that the MCP handlers use
+      // The MCP handlers use idFromName with the session ID from the request
+      // For admin, we'll clear ALL data by accessing the DO directly
+      const id = env.MCP_OBJECT.idFromName("fluma-shared");
+      const stub = env.MCP_OBJECT.get(id);
+      
+      // Call a reset method on the DO
+      const resetRequest = new Request("http://internal/reset", { method: "POST" });
+      const response = await stub.fetch(resetRequest);
+      
+      return new Response(JSON.stringify({ success: true, message: "All events cleared" }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     
     // Route to appropriate handler based on path
     if (url.pathname.startsWith("/mcp")) {
