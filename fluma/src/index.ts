@@ -190,7 +190,7 @@ export class FlumaMCP extends McpAgent<Env, Record<string, never>, Props> {
       "list_events",
       toolDefinitions.list_events.description,
       listEventsSchema.shape,
-      async ({ filter = "upcoming" }) => {
+      async ({ filter = "all" }) => {
         const user = this.ensureUser();
         const now = new Date().toISOString();
         

@@ -19,7 +19,7 @@ export const updateProfileSchema = z.object({
 
 export const listEventsSchema = z.object({
   filter: z.enum(["upcoming", "past", "hosting", "attending", "all"]).optional()
-    .describe("Filter events: upcoming (default), past, hosting (events you host), attending (events you RSVP'd to), all"),
+    .describe("Filter events: all (default), upcoming, past, hosting (events you host), attending (events you RSVP'd to)"),
 });
 
 export const getEventSchema = z.object({
