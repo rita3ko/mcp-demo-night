@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fluma",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "migrations": [
+    {
+      "new_sqlite_classes": ["FlumaMCP"],
+      "tag": "v1"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "FlumaMCP",
+        "name": "MCP_OBJECT"
+      }
+    ]
+  },
+
+  "observability": {
+    "enabled": true
+  },
+
+  "dev": {
+    "port": 8788,
+    "persist": true
+  }
+}

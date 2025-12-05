@@ -1,0 +1,30 @@
+{
+  "name": "fluma",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fluma - MCP-first event management app",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "cf-typegen": "wrangler types",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.0.13",
+    "@modelcontextprotocol/sdk": "1.20.2",
+    "agents": "^0.2.19",
+    "hono": "^4.10.4",
+    "just-pick": "^4.2.0",
+    "octokit": "^5.0.4",
+    "resend": "^4.1.2",
+    "workers-mcp": "^0.0.13",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "prettier": "^3.6.2",
+    "typescript": "5.9.3",
+    "wrangler": "^4.52.1"
+  }
+}

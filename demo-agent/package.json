@@ -1,0 +1,25 @@
+{
+  "name": "demo-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo comparing MCP vs Codemode approaches",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^1.0.28",
+    "agents": "^0.2.29",
+    "ai": "^5.0.106",
+    "hono": "^4.10.0",
+    "json-schema-to-typescript": "^15.0.4",
+    "zod": "^3.25.0",
+    "zod-to-ts": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  }
+}

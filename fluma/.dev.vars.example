@@ -1,0 +1,11 @@
+# GitHub OAuth App credentials
+# Create at: https://github.com/settings/developers
+GITHUB_CLIENT_ID="your-github-client-id"
+GITHUB_CLIENT_SECRET="your-github-client-secret"
+
+# Cookie encryption key (generate with: openssl rand -hex 32)
+COOKIE_ENCRYPTION_KEY="your-random-32-byte-hex-string"
+
+# Resend API key for email notifications (optional)
+# Get at: https://resend.com/api-keys
+RESEND_API_KEY="re_your_resend_api_key"

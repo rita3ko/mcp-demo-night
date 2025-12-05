@@ -1,0 +1,51 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fluma-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "./public"
+  },
+
+  "migrations": [
+    {
+      "new_sqlite_classes": ["MCPChatAgent", "CodemodeChatAgent"],
+      "tag": "v1"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "MCPChatAgent",
+        "name": "MCP_CHAT_AGENT"
+      },
+      {
+        "class_name": "CodemodeChatAgent",
+        "name": "CODEMODE_CHAT_AGENT"
+      }
+    ]
+  },
+
+  "worker_loaders": [
+    {
+      "binding": "CODE_EXECUTOR"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // Production environment variable for MCP URL
+  // Note: Code replaces /sse with /mcp for HTTP transport
+  "vars": {
+    "FLUMA_MCP_URL": "https://fluma.rita.workers.dev/sse"
+  },
+
+  "dev": {
+    "port": 8787
+  }
+}
