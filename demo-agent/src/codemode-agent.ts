@@ -24,10 +24,16 @@ type Env = {
 // Session ID for the MCP agent DO - must match frontend
 const MCP_AGENT_SESSION = 'session-v6';
 
+// Type for usage tracking
+type UsageData = { inputTokens: number; outputTokens: number };
+
 export class CodemodeChatAgent extends AIChatAgent<Env> {
   // In-memory cache for types and descriptions (per DO instance)
   private cachedTypes: string | null = null;
   private cachedDescriptions: string | null = null;
+  
+  // Accumulator for codegen usage during a single request
+  private pendingCodegenUsage: UsageData = { inputTokens: 0, outputTokens: 0 };
 
   /**
    * Get the shared MCP session ID from the MCP agent.
@@ -98,6 +104,9 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
       this.getToolDescriptions(),
     ]);
 
+    // Reset pending codegen usage for this request
+    this.pendingCodegenUsage = { inputTokens: 0, outputTokens: 0 };
+
     // Create the codemode meta-tool
     const codemodeTool = tool({
       description: 'Generate and execute JavaScript code to accomplish a task using Fluma tools. Use this when you need to work with events, RSVPs, or user profiles.',
@@ -107,36 +116,23 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
       execute: async ({ functionDescription }) => {
         try {
           // Generate code using OpenAI gpt-4.1 via AI Gateway (better structured output)
-          // Note: The prompt must contain the word "JSON" for OpenAI's response_format requirement
           const codeGenResult = await generateObject({
             model: codeGenModel,
             schema: z.object({ code: z.string() }),
-            prompt: `You are a code generating machine. Return your response as JSON with a "code" field.
+            prompt: `Generate async JS function (no args) using codemode API. Return JSON with "code" field.
 
-In addition to regular javascript, you can also use the following functions:
+API: ${generatedTypes}
 
-${generatedTypes}      
+Rules: Use object args (codemode.fn({})), ISO dates, try/catch each op, return results object for multiple ops.
 
-Generate an async function that achieves the goal. This async function doesn't accept any arguments.
-Return ONLY the JavaScript code in the "code" field of your JSON response.
-
-Important notes:
-- Always pass arguments as an object: codemode.get_profile({}) not codemode.get_profile()
-- For dates, use ISO 8601 format: "2025-01-04T18:00:00Z"
-- The function should return the final result
-
-Example code:
-async function() {
-  const result = await codemode.create_event({
-    title: "My Event",
-    location: "San Francisco",
-    date: "2024-12-20T18:00:00Z"
-  });
-  return result;
-}
-
-User request: ${functionDescription}`,
+Task: ${functionDescription}`,
           });
+
+          // Track codegen usage (GPT-4.1)
+          if (codeGenResult.usage) {
+            this.pendingCodegenUsage.inputTokens += codeGenResult.usage.inputTokens || 0;
+            this.pendingCodegenUsage.outputTokens += codeGenResult.usage.outputTokens || 0;
+          }
 
           const generatedCode = codeGenResult.object.code;
 
@@ -145,7 +141,6 @@ User request: ${functionDescription}`,
 
           return JSON.stringify({
             success: true,
-            code: generatedCode,
             result,
           }, null, 2);
         } catch (error: any) {
@@ -157,28 +152,14 @@ User request: ${functionDescription}`,
       },
     });
 
-    const systemPrompt = `You are a helpful assistant for Fluma, an event management application.
+    const systemPrompt = `You are a helpful assistant for Fluma, an event management app.
 
-You have access to a special "codemode" tool that generates and executes JavaScript code to accomplish tasks.
-The codemode tool can work with:
+Use the "codemode" tool to work with: ${toolDescriptions}
 
-${toolDescriptions}
+IMPORTANT: Batch multiple operations into ONE codemode call (e.g., "update profile and RSVP to events abc, def").
+Only use multiple calls when you need data from one to inform the next.
 
-When users ask about events, RSVPs, or their profile, use the codemode tool with a clear function description.
-
-IMPORTANT: After executing code, provide a warm, conversational response like a helpful assistant would. Include:
-- Use **bold** for important details like event names
-- Format the date/time in a friendly way (e.g., "December 10, 2024 at 6:00 PM")
-- Include the event ID using backticks (e.g., \`abc-123\`) so users can reference it
-- Offer helpful follow-up suggestions (e.g., "Would you like to add a description?" or "Would you like to invite anyone?")
-- Be encouraging and personable
-
-Example response for creating an event:
-"Perfect! I've created your event **Event Name** for December 10, 2024 at 6:00 PM at Location. Your event ID is: \`abc-123\`
-
-You can now share this event with others, and they'll be able to RSVP. Would you like to add a description or make any other changes?"
-
-Never give bare, robotic responses - be friendly and helpful!`;
+If errors occur, retry failed operations once. Be warm and concise in responses.`;
 
     const result = streamText({
       model,
@@ -187,14 +168,22 @@ Never give bare, robotic responses - be friendly and helpful!`;
       tools: { codemode: codemodeTool },
       stopWhen: stepCountIs(3),
       onFinish: async (event) => {
-        // Accumulate usage in DO storage
-        const usage = event.usage;
-        const currentUsage = await this.ctx.storage.get<{inputTokens: number, outputTokens: number}>('total-usage') || { inputTokens: 0, outputTokens: 0 };
-        const newUsage = {
-          inputTokens: currentUsage.inputTokens + (usage?.inputTokens || 0),
-          outputTokens: currentUsage.outputTokens + (usage?.outputTokens || 0),
+        // Accumulate Claude usage in DO storage
+        const claudeUsage = event.usage;
+        const currentClaudeUsage = await this.ctx.storage.get<UsageData>('claude-usage') || { inputTokens: 0, outputTokens: 0 };
+        const newClaudeUsage = {
+          inputTokens: currentClaudeUsage.inputTokens + (claudeUsage?.inputTokens || 0),
+          outputTokens: currentClaudeUsage.outputTokens + (claudeUsage?.outputTokens || 0),
         };
-        await this.ctx.storage.put('total-usage', newUsage);
+        await this.ctx.storage.put('claude-usage', newClaudeUsage);
+        
+        // Accumulate codegen (GPT-4.1) usage in DO storage
+        const currentCodegenUsage = await this.ctx.storage.get<UsageData>('codegen-usage') || { inputTokens: 0, outputTokens: 0 };
+        const newCodegenUsage = {
+          inputTokens: currentCodegenUsage.inputTokens + this.pendingCodegenUsage.inputTokens,
+          outputTokens: currentCodegenUsage.outputTokens + this.pendingCodegenUsage.outputTokens,
+        };
+        await this.ctx.storage.put('codegen-usage', newCodegenUsage);
         
         onFinish(event as any);
       },
@@ -203,31 +192,47 @@ Never give bare, robotic responses - be friendly and helpful!`;
     return result.toUIMessageStreamResponse();
   }
   
-  // Method to get total usage (can be called via RPC)
-  async getUsage(): Promise<{inputTokens: number, outputTokens: number}> {
-    return await this.ctx.storage.get<{inputTokens: number, outputTokens: number}>('total-usage') || { inputTokens: 0, outputTokens: 0 };
+  // Method to get usage breakdown (can be called via RPC)
+  async getUsage(): Promise<{
+    claude: UsageData;
+    codegen: UsageData;
+    total: UsageData;
+  }> {
+    const claude = await this.ctx.storage.get<UsageData>('claude-usage') || { inputTokens: 0, outputTokens: 0 };
+    const codegen = await this.ctx.storage.get<UsageData>('codegen-usage') || { inputTokens: 0, outputTokens: 0 };
+    return {
+      claude,
+      codegen,
+      total: {
+        inputTokens: claude.inputTokens + codegen.inputTokens,
+        outputTokens: claude.outputTokens + codegen.outputTokens,
+      },
+    };
   }
   
   // Method to reset usage
   async resetUsage(): Promise<void> {
-    await this.ctx.storage.put('total-usage', { inputTokens: 0, outputTokens: 0 });
+    await this.ctx.storage.put('claude-usage', { inputTokens: 0, outputTokens: 0 });
+    await this.ctx.storage.put('codegen-usage', { inputTokens: 0, outputTokens: 0 });
   }
   
   // Method to clear all state (conversation history, usage, cache)
   async clearState(): Promise<void> {
     // Clear our custom state
-    await this.ctx.storage.delete('total-usage');
+    await this.ctx.storage.delete('claude-usage');
+    await this.ctx.storage.delete('codegen-usage');
     
     // Clear in-memory cache
     this.cachedTypes = null;
     this.cachedDescriptions = null;
     
-    // Clear messages from the AIChatAgent framework using SQL
-    // The framework uses cf_agents_state table
+    // Clear messages from the AIChatAgent framework
     try {
-      this.sql`DELETE FROM cf_agents_state`;
+      this.sql`DELETE FROM cf_ai_chat_agent_messages`;
+      this.sql`DELETE FROM cf_ai_chat_stream_chunks`;
+      this.sql`DELETE FROM cf_ai_chat_stream_metadata`;
     } catch (e) {
-      // Table might not exist yet (first run)
+      // Tables might not exist yet (first run)
     }
   }
 

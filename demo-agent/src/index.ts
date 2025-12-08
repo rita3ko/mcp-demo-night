@@ -270,11 +270,21 @@ app.get('/admin', async (c) => {
         const res = await fetch('/api/usage');
         const usage = await res.json();
         const mcpTotal = (usage.mcp?.inputTokens || 0) + (usage.mcp?.outputTokens || 0);
-        const codemodeTotal = (usage.codemode?.inputTokens || 0) + (usage.codemode?.outputTokens || 0);
+        
+        // Codemode now has breakdown: claude, codegen, total
+        const codemode = usage.codemode || {};
+        const claudeTotal = (codemode.claude?.inputTokens || 0) + (codemode.claude?.outputTokens || 0);
+        const codegenTotal = (codemode.codegen?.inputTokens || 0) + (codemode.codegen?.outputTokens || 0);
+        const codemodeTotal = (codemode.total?.inputTokens || 0) + (codemode.total?.outputTokens || 0);
+        
         document.getElementById('usage-display').innerHTML = 
-          '<div class="space-y-1">' +
+          '<div class="space-y-2">' +
           '<div class="flex justify-between"><span>MCP Agent:</span><span class="text-green-400">' + mcpTotal.toLocaleString() + ' tokens</span></div>' +
-          '<div class="flex justify-between"><span>Codemode Agent:</span><span class="text-orange-400">' + codemodeTotal.toLocaleString() + ' tokens</span></div>' +
+          '<div class="border-t border-zinc-700 pt-2 mt-2">' +
+          '<div class="flex justify-between"><span>Codemode Total:</span><span class="text-orange-400">' + codemodeTotal.toLocaleString() + ' tokens</span></div>' +
+          '<div class="flex justify-between text-xs text-muted-foreground ml-2"><span>└ Claude:</span><span>' + claudeTotal.toLocaleString() + '</span></div>' +
+          '<div class="flex justify-between text-xs text-muted-foreground ml-2"><span>└ Codegen (GPT-4.1):</span><span>' + codegenTotal.toLocaleString() + '</span></div>' +
+          '</div>' +
           '</div>';
       } catch (e) {
         document.getElementById('usage-display').textContent = 'Failed to load usage';

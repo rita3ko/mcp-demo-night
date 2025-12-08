@@ -79,26 +79,8 @@ export class MCPChatAgent extends AIChatAgent<Env> {
 
     const systemPrompt = `You are a helpful assistant for Fluma, an event management application.
 
-You have access to tools for managing events, RSVPs, and user profiles.
+You have access to tools for managing events, RSVPs, and user profiles. Use the appropriate tools when users ask about events, RSVPs, or their profile.
 
-Available tools:
-- get_profile: Get the current user's profile
-- update_profile: Update user profile (first_name, last_name, email)
-- list_events: List events (filter by: upcoming, past, hosting, attending, all)
-- get_event: Get details of a specific event
-- create_event: Create a new event (title, description, location, date)
-- update_event: Update an event you host
-- delete_event: Delete an event you host
-- list_event_rsvps: List RSVPs for an event you host
-- add_cohost: Add a co-host to your event
-- remove_cohost: Remove a co-host from your event
-- rsvp: RSVP to an event (going, maybe, not_going)
-- update_rsvp: Update your RSVP status
-- cancel_rsvp: Cancel your RSVP
-- get_my_rsvps: Get events you've RSVP'd to
-- get_my_events: Get events you're hosting
-
-When users ask about events, RSVPs, or their profile, use the appropriate tools.
 Be concise and helpful in your responses.`;
 
     const result = streamText({
@@ -141,12 +123,13 @@ Be concise and helpful in your responses.`;
     await this.ctx.storage.delete('mcp-session-id');
     this.mcpSessionId = null;
     
-    // Clear messages from the AIChatAgent framework using SQL
-    // The framework uses cf_agents_state table
+    // Clear messages from the AIChatAgent framework
     try {
-      this.sql`DELETE FROM cf_agents_state`;
+      this.sql`DELETE FROM cf_ai_chat_agent_messages`;
+      this.sql`DELETE FROM cf_ai_chat_stream_chunks`;
+      this.sql`DELETE FROM cf_ai_chat_stream_metadata`;
     } catch (e) {
-      // Table might not exist yet (first run)
+      // Tables might not exist yet (first run)
     }
   }
   

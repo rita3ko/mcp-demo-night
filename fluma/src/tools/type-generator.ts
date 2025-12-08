@@ -28,53 +28,31 @@ function getZodTypeString(schema: z.ZodTypeAny): string {
 }
 
 /**
- * Generate TypeScript type definitions from the tool definitions.
- * Creates proper interface definitions with JSDoc comments.
+ * Generate compact TypeScript type definitions from the tool definitions.
+ * Optimized for minimal token usage in LLM prompts.
  */
 export function generateTypeScript(): string {
-  let availableTypes = "";
-  let availableTools = "";
+  const tools: string[] = [];
 
   for (const [toolName, toolDef] of Object.entries(toolDefinitions)) {
     const inputSchema = toolDef.schema as z.ZodObject<any>;
-    const description = toolDef.description;
     const shape = inputSchema.shape;
 
-    // Generate input interface
-    const inputTypeName = `${toPascalCase(toolName)}Input`;
-    const inputFields = Object.entries(shape)
+    // Generate inline type for parameters
+    const params = Object.entries(shape)
       .map(([key, s]) => {
         const zodSchema = s as z.ZodTypeAny;
         const isOptional = zodSchema.isOptional?.() || zodSchema instanceof z.ZodOptional;
         const fieldType = getZodTypeString(zodSchema);
-        const fieldDesc = zodSchema.description;
-        let field = "";
-        if (fieldDesc) {
-          field += `  /** ${fieldDesc} */\n`;
-        }
-        field += `  ${key}${isOptional ? "?" : ""}: ${fieldType};`;
-        return field;
+        return `${key}${isOptional ? "?" : ""}: ${fieldType}`;
       })
-      .join("\n");
+      .join(", ");
 
-    availableTypes += `\ninterface ${inputTypeName} {\n${inputFields || "  [key: string]: unknown;"}\n}`;
-
-    // Output type is generic since MCP returns dynamic data
-    const outputTypeName = `${toPascalCase(toolName)}Output`;
-    availableTypes += `\ninterface ${outputTypeName} { [key: string]: any; }`;
-
-    // Add tool to the codemode interface with JSDoc
-    availableTools += `\n  /**`;
-    availableTools += `\n   * ${description}`;
-    availableTools += `\n   */`;
-    availableTools += `\n  ${toolName}: (input: ${inputTypeName}) => Promise<${outputTypeName}>;`;
-    availableTools += "\n";
+    // Compact single-line format: toolName(params) - description
+    tools.push(`${toolName}({${params}}): Promise<any> // ${toolDef.description}`);
   }
 
-  // Wrap tools in the codemode declaration
-  availableTools = `\ndeclare const codemode: {${availableTools}};`;
-
-  return `${availableTypes}\n${availableTools}`;
+  return `declare const codemode: {\n  ${tools.join(";\n  ")};\n};`;
 }
 
 /**
