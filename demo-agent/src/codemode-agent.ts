@@ -141,6 +141,7 @@ Task: ${functionDescription}`,
 
           return JSON.stringify({
             success: true,
+            code: generatedCode,
             result,
           }, null, 2);
         } catch (error: any) {
