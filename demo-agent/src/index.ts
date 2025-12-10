@@ -470,6 +470,11 @@ app.get('/just-mcp', async (c) => {
     let streamingElement = null;
     let streamingContent = '';
     
+    // Tool input streaming state
+    let toolStreamingElement = null;
+    let toolStreamingInput = '';
+    let toolStreamingName = '';
+    
     function updateStatus(connected) {
       const dot = document.getElementById('status-dot');
       const text = document.getElementById('status-text');
@@ -528,10 +533,29 @@ app.get('/just-mcp', async (c) => {
               break;
               
             case 'tool-input-start':
+              toolStreamingName = event.toolName || 'unknown';
+              toolStreamingInput = '';
+              toolStreamingElement = createToolCallElement(toolStreamingName);
+              messagesContainer.appendChild(toolStreamingElement);
+              break;
+            
+            case 'tool-input-delta':
+              if (toolStreamingElement && event.delta) {
+                toolStreamingInput += event.delta;
+                updateToolCallContent(toolStreamingElement, toolStreamingInput);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+              }
               break;
               
             case 'tool-input-available':
-              addToolCall(event.toolName, event.input);
+              if (toolStreamingElement) {
+                const finalInput = typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2);
+                updateToolCallContent(toolStreamingElement, finalInput);
+                toolStreamingElement = null;
+                toolStreamingInput = '';
+              } else {
+                addToolCall(event.toolName, event.input);
+              }
               break;
               
             case 'tool-output-available':
@@ -565,13 +589,35 @@ app.get('/just-mcp', async (c) => {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
     
+    function createToolCallElement(toolName) {
+      const div = document.createElement('div');
+      div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
+      div.innerHTML = \`
+        <div class="text-xs text-green-400 font-medium mb-2">Tool: \${escapeHtml(toolName)}</div>
+        <pre class="tool-input-content text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap"><span class="animate-pulse">generating...</span></pre>
+      \`;
+      return div;
+    }
+    
+    function updateToolCallContent(element, content) {
+      const pre = element.querySelector('.tool-input-content');
+      if (pre) {
+        let displayContent = content;
+        try {
+          const parsed = JSON.parse(content);
+          displayContent = JSON.stringify(parsed, null, 2);
+        } catch (e) {}
+        pre.textContent = displayContent;
+      }
+    }
+    
     function addToolCall(toolName, input) {
       if (!input) return;
       const div = document.createElement('div');
       div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
       div.innerHTML = \`
         <div class="text-xs text-green-400 font-medium mb-2">Tool: \${escapeHtml(toolName || 'unknown')}</div>
-        <pre class="text-xs font-mono text-muted-foreground overflow-x-auto">\${escapeHtml(JSON.stringify(input, null, 2))}</pre>
+        <pre class="text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap">\${escapeHtml(JSON.stringify(input, null, 2))}</pre>
       \`;
       messagesContainer.appendChild(div);
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -604,6 +650,9 @@ app.get('/just-mcp', async (c) => {
       
       streamingElement = null;
       streamingContent = '';
+      toolStreamingElement = null;
+      toolStreamingInput = '';
+      toolStreamingName = '';
       
       addUserMessage(message);
       
