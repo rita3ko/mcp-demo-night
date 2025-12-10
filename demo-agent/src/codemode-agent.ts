@@ -72,6 +72,48 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
     // Fetch types from Fluma (cached after first fetch)
     const generatedTypes = await this.getToolTypes();
 
+    // Helper to summarize large results to reduce token usage
+    const summarizeResult = (result: any): any => {
+      // If it's an array with more than 5 items, summarize it
+      if (Array.isArray(result)) {
+        if (result.length === 0) {
+          return { count: 0, items: [] };
+        }
+        
+        if (result.length > 5) {
+          return {
+            count: result.length,
+            sample: result[0],
+            message: `${result.length} items returned (showing first as sample)`
+          };
+        }
+        
+        // Small arrays - return as-is
+        return result;
+      }
+      
+      // If it's an object, check for nested arrays that should be summarized
+      if (result && typeof result === 'object') {
+        const summarized: any = {};
+        for (const [key, value] of Object.entries(result)) {
+          if (Array.isArray(value) && value.length > 5) {
+            // Summarize large nested arrays
+            summarized[key] = {
+              count: value.length,
+              sample: value[0],
+              message: `${value.length} items (showing first as sample)`
+            };
+          } else {
+            summarized[key] = value;
+          }
+        }
+        return summarized;
+      }
+      
+      // Primitives - return as-is
+      return result;
+    };
+
     // Create the codemode meta-tool - Claude generates the code directly
     const codemodeTool = tool({
       description: 'Execute JavaScript code to accomplish a task using Fluma tools. Use this when you need to work with events, RSVPs, or user profiles.',
@@ -83,16 +125,16 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
           // Execute the generated code using Dynamic Worker Loader
           const result = await this.executeCode(code);
 
+          // Return summarized result (code is omitted - Claude already has it)
           return JSON.stringify({
             success: true,
-            code,
-            result,
+            result: summarizeResult(result),
           }, null, 2);
         } catch (error: any) {
+          // Don't include code in error - Claude already has it
           return JSON.stringify({
             success: false,
             error: error.message,
-            code,
           }, null, 2);
         }
       },

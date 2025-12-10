@@ -243,6 +243,12 @@
       codemode: { element: null, content: '' }
     };
     
+    // Tool input streaming state (for showing code as it generates)
+    const toolStreaming = {
+      mcp: { element: null, toolName: '', input: '' },
+      codemode: { element: null, toolName: '', input: '' }
+    };
+    
     // Update connection status
     function updateStatus(agent, connected) {
       const dot = document.getElementById(`${agent}-status-dot`);
@@ -317,11 +323,34 @@
               break;
               
             case 'tool-input-start':
-              addToolCall(container, event.toolName, null, agent);
+              // Start streaming tool input
+              toolStreaming[agent].toolName = event.toolName || 'unknown';
+              toolStreaming[agent].input = '';
+              toolStreaming[agent].element = createToolCallElement(agent, toolStreaming[agent].toolName);
+              container.appendChild(toolStreaming[agent].element);
+              break;
+            
+            case 'tool-input-delta':
+              // Stream tool input as it comes
+              if (toolStreaming[agent].element && event.delta) {
+                toolStreaming[agent].input += event.delta;
+                updateToolCallContent(toolStreaming[agent].element, toolStreaming[agent].input);
+                container.scrollTop = container.scrollHeight;
+              }
               break;
               
             case 'tool-input-available':
-              addToolCall(container, event.toolName, event.input, agent);
+              // Final tool input - update or create element
+              if (toolStreaming[agent].element) {
+                // Update existing streaming element with final content
+                const finalInput = typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2);
+                updateToolCallContent(toolStreaming[agent].element, finalInput);
+                toolStreaming[agent].element = null;
+                toolStreaming[agent].input = '';
+              } else {
+                // No streaming happened, create element directly
+                addToolCall(container, event.toolName, event.input, agent);
+              }
               break;
               
             case 'tool-output-available':
@@ -364,7 +393,75 @@
       container.scrollTop = container.scrollHeight;
     }
     
-    // Add tool call
+    // Create a tool call element (for streaming)
+    function createToolCallElement(agent, toolName) {
+      const div = document.createElement('div');
+      const color = agent === 'mcp' ? 'text-green-400' : 'text-orange-400';
+      div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
+      div.dataset.toolName = toolName; // Store tool name for later use
+      
+      if (toolName === 'codemode') {
+        // Codemode: show "Generated Code" header
+        div.innerHTML = `
+          <div class="text-xs ${color} font-medium mb-2">Generated Code</div>
+          <pre class="tool-input-content text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap bg-black/30 p-3 rounded"><span class="animate-pulse">generating...</span></pre>
+        `;
+      } else {
+        div.innerHTML = `
+          <div class="text-xs ${color} font-medium mb-2">Tool: ${escapeHtml(toolName)}</div>
+          <pre class="tool-input-content text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap"><span class="animate-pulse">generating...</span></pre>
+        `;
+      }
+      return div;
+    }
+    
+    // Update tool call content (for streaming)
+    function updateToolCallContent(element, content) {
+      const pre = element.querySelector('.tool-input-content');
+      if (!pre) return;
+      
+      const toolName = element.dataset.toolName;
+      
+      if (toolName === 'codemode') {
+        // For codemode, try to extract the code from the JSON
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.code) {
+            // Show just the code, nicely formatted
+            pre.textContent = parsed.code.trim();
+            return;
+          }
+        } catch (e) {
+          // Still streaming, might have partial JSON
+          // Try to extract code from partial content
+          const codeMatch = content.match(/"code":\s*"([\s\S]*)/);
+          if (codeMatch) {
+            // Unescape the partial code string
+            let partialCode = codeMatch[1];
+            // Remove trailing incomplete parts
+            partialCode = partialCode.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+            // Remove trailing quote and brace if present
+            partialCode = partialCode.replace(/"\s*}\s*$/, '').replace(/"\s*$/, '');
+            pre.textContent = partialCode;
+            return;
+          }
+        }
+        // Fallback: show raw content
+        pre.textContent = content;
+      } else {
+        // Regular tool: try to format as JSON
+        let displayContent = content;
+        try {
+          const parsed = JSON.parse(content);
+          displayContent = JSON.stringify(parsed, null, 2);
+        } catch (e) {
+          // Not valid JSON yet, show raw (likely still streaming)
+        }
+        pre.textContent = displayContent;
+      }
+    }
+    
+    // Add tool call (non-streaming fallback)
     function addToolCall(container, toolName, input, agent) {
       // Skip if no input yet (tool-input-start without data)
       if (!input) return;
@@ -372,10 +469,19 @@
       const div = document.createElement('div');
       const color = agent === 'mcp' ? 'text-green-400' : 'text-orange-400';
       div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
-      div.innerHTML = `
-        <div class="text-xs ${color} font-medium mb-2">Tool: ${escapeHtml(toolName || 'unknown')}</div>
-        <pre class="text-xs font-mono text-muted-foreground overflow-x-auto">${escapeHtml(JSON.stringify(input, null, 2))}</pre>
-      `;
+      
+      if (toolName === 'codemode' && input.code) {
+        // Codemode: show just the code nicely
+        div.innerHTML = `
+          <div class="text-xs ${color} font-medium mb-2">Generated Code</div>
+          <pre class="text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap bg-black/30 p-3 rounded">${escapeHtml(input.code.trim())}</pre>
+        `;
+      } else {
+        div.innerHTML = `
+          <div class="text-xs ${color} font-medium mb-2">Tool: ${escapeHtml(toolName || 'unknown')}</div>
+          <pre class="text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap">${escapeHtml(JSON.stringify(input, null, 2))}</pre>
+        `;
+      }
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
@@ -453,27 +559,42 @@
         parsed = output;
       }
       
-      if (parsed && parsed.code && parsed.result !== undefined) {
-        // Codemode result with code - show collapsible details only (LLM provides the prose response)
-        div.className = 'space-y-2';
+      const color = agent === 'mcp' ? 'text-green-400' : 'text-orange-400';
+      
+      // Check if this is a codemode result (has success field and result)
+      if (parsed && parsed.success !== undefined && parsed.result !== undefined) {
+        // Codemode execution result - show summarized result nicely
+        const result = parsed.result;
+        let resultHtml = '';
+        
+        if (result.count !== undefined && result.sample !== undefined) {
+          // Summarized array result
+          resultHtml = `
+            <div class="text-sm text-foreground mb-2">${result.message || result.count + ' items'}</div>
+            <div class="text-xs text-muted-foreground mb-1">Sample item:</div>
+            <pre class="text-xs font-mono bg-black/30 p-2 rounded overflow-x-auto">${escapeHtml(typeof result.sample === 'string' ? result.sample : JSON.stringify(result.sample, null, 2))}</pre>
+          `;
+        } else {
+          // Regular result (small array or single item)
+          resultHtml = `
+            <pre class="text-xs font-mono text-muted-foreground overflow-x-auto">${escapeHtml(typeof result === 'string' ? result : JSON.stringify(result, null, 2))}</pre>
+          `;
+        }
+        
+        div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
         div.innerHTML = `
-          <details class="p-3 rounded-lg bg-zinc-900/50 border border-border">
-            <summary class="text-xs text-orange-400 font-medium cursor-pointer">View Generated Code & Details</summary>
-            <div class="mt-3 space-y-3">
-              <div>
-                <div class="text-xs text-muted-foreground mb-1">Code</div>
-                <pre class="text-xs font-mono bg-black/30 p-2 rounded overflow-x-auto">${escapeHtml(parsed.code)}</pre>
-              </div>
-              <div>
-                <div class="text-xs text-muted-foreground mb-1">Raw Result</div>
-                <pre class="text-xs font-mono bg-black/30 p-2 rounded overflow-x-auto">${escapeHtml(typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result, null, 2))}</pre>
-              </div>
-            </div>
-          </details>
+          <div class="text-xs ${color} font-medium mb-2">Execution Result</div>
+          ${resultHtml}
+        `;
+      } else if (parsed && parsed.success === false && parsed.error) {
+        // Codemode error result
+        div.className = 'p-3 rounded-lg bg-red-900/20 border border-red-500/30';
+        div.innerHTML = `
+          <div class="text-xs text-red-400 font-medium mb-2">Execution Error</div>
+          <pre class="text-xs font-mono text-red-300 overflow-x-auto">${escapeHtml(parsed.error)}</pre>
         `;
       } else {
         // Regular tool result (MCP)
-        const color = agent === 'mcp' ? 'text-green-400' : 'text-orange-400';
         const displayText = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
         div.className = 'p-3 rounded-lg bg-zinc-900/50 border border-border';
         div.innerHTML = `
@@ -506,6 +627,8 @@
       // Reset streaming state
       streaming.mcp = { element: null, content: '' };
       streaming.codemode = { element: null, content: '' };
+      toolStreaming.mcp = { element: null, toolName: '', input: '' };
+      toolStreaming.codemode = { element: null, toolName: '', input: '' };
       
       // Add user message to both panels
       addUserMessage(mcpMessages, message);
