@@ -2,14 +2,13 @@ import { AIChatAgent } from 'agents/ai-chat-agent';
 import {
   convertToModelMessages,
   streamText,
-  generateObject,
   tool,
   stepCountIs,
   type StreamTextOnFinishCallback,
   type ToolSet,
 } from 'ai';
 import { z } from 'zod';
-import { createGatewayModel, createCodeGenModel } from './model';
+import { createGatewayModel } from './model';
 
 type Env = {
   CF_ACCOUNT_ID: string;
@@ -28,12 +27,8 @@ const MCP_AGENT_SESSION = 'session-v6';
 type UsageData = { inputTokens: number; outputTokens: number };
 
 export class CodemodeChatAgent extends AIChatAgent<Env> {
-  // In-memory cache for types and descriptions (per DO instance)
+  // In-memory cache for types (per DO instance)
   private cachedTypes: string | null = null;
-  private cachedDescriptions: string | null = null;
-  
-  // Accumulator for codegen usage during a single request
-  private pendingCodegenUsage: UsageData = { inputTokens: 0, outputTokens: 0 };
 
   /**
    * Get the shared MCP session ID from the MCP agent.
@@ -65,25 +60,7 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
     return this.cachedTypes;
   }
 
-  /**
-   * Fetch and cache tool descriptions from Fluma.
-   * Cached in memory for the lifetime of this DO instance.
-   */
-  private async getToolDescriptions(): Promise<string> {
-    if (this.cachedDescriptions) {
-      return this.cachedDescriptions;
-    }
 
-    const descriptionsUrl = this.env.FLUMA_MCP_URL.replace('/sse', '/descriptions');
-    const response = await fetch(descriptionsUrl);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch descriptions: ${response.status} ${response.statusText}`);
-    }
-    
-    this.cachedDescriptions = await response.text();
-    return this.cachedDescriptions;
-  }
 
   async onChatMessage(onFinish: StreamTextOnFinishCallback<ToolSet>) {
     const model = createGatewayModel({
@@ -92,62 +69,30 @@ export class CodemodeChatAgent extends AIChatAgent<Env> {
       CF_AIG_TOKEN: this.env.CF_AIG_TOKEN,
     });
 
-    const codeGenModel = createCodeGenModel({
-      CF_ACCOUNT_ID: this.env.CF_ACCOUNT_ID,
-      CF_GATEWAY_ID: this.env.CF_GATEWAY_ID,
-      CF_AIG_TOKEN: this.env.CF_AIG_TOKEN,
-    });
+    // Fetch types from Fluma (cached after first fetch)
+    const generatedTypes = await this.getToolTypes();
 
-    // Fetch types and descriptions from Fluma (cached after first fetch)
-    const [generatedTypes, toolDescriptions] = await Promise.all([
-      this.getToolTypes(),
-      this.getToolDescriptions(),
-    ]);
-
-    // Reset pending codegen usage for this request
-    this.pendingCodegenUsage = { inputTokens: 0, outputTokens: 0 };
-
-    // Create the codemode meta-tool
+    // Create the codemode meta-tool - Claude generates the code directly
     const codemodeTool = tool({
-      description: 'Generate and execute JavaScript code to accomplish a task using Fluma tools. Use this when you need to work with events, RSVPs, or user profiles.',
+      description: 'Execute JavaScript code to accomplish a task using Fluma tools. Use this when you need to work with events, RSVPs, or user profiles.',
       inputSchema: z.object({
-        functionDescription: z.string().describe('Description of what the code should accomplish'),
+        code: z.string().describe('An async JavaScript function (as a string) that uses the codemode API to accomplish the task. Must be an async arrow function that returns a value.'),
       }),
-      execute: async ({ functionDescription }) => {
+      execute: async ({ code }) => {
         try {
-          // Generate code using OpenAI gpt-4.1 via AI Gateway (better structured output)
-          const codeGenResult = await generateObject({
-            model: codeGenModel,
-            schema: z.object({ code: z.string() }),
-            prompt: `Generate async JS function (no args) using codemode API. Return JSON with "code" field.
-
-API: ${generatedTypes}
-
-Rules: Use object args (codemode.fn({})), ISO dates, try/catch each op, return results object for multiple ops.
-
-Task: ${functionDescription}`,
-          });
-
-          // Track codegen usage (GPT-4.1)
-          if (codeGenResult.usage) {
-            this.pendingCodegenUsage.inputTokens += codeGenResult.usage.inputTokens || 0;
-            this.pendingCodegenUsage.outputTokens += codeGenResult.usage.outputTokens || 0;
-          }
-
-          const generatedCode = codeGenResult.object.code;
-
           // Execute the generated code using Dynamic Worker Loader
-          const result = await this.executeCode(generatedCode);
+          const result = await this.executeCode(code);
 
           return JSON.stringify({
             success: true,
-            code: generatedCode,
+            code,
             result,
           }, null, 2);
         } catch (error: any) {
           return JSON.stringify({
             success: false,
             error: error.message,
+            code,
           }, null, 2);
         }
       },
@@ -155,12 +100,25 @@ Task: ${functionDescription}`,
 
     const systemPrompt = `You are a helpful assistant for Fluma, an event management app.
 
-Use the "codemode" tool to work with: ${toolDescriptions}
+You have access to a "codemode" tool that executes JavaScript code to interact with the Fluma API.
 
-IMPORTANT: Batch multiple operations into ONE codemode call (e.g., "update profile and RSVP to events abc, def").
-Only use multiple calls when you need data from one to inform the next.
+## Available API (via the \`codemode\` object):
+${generatedTypes}
 
-If errors occur, retry failed operations once. Be warm and concise in responses.`;
+## Code Generation Rules:
+1. Write an async arrow function that returns a value: \`async () => { ... }\`
+2. Use object arguments: \`codemode.create_event({ title: "...", ... })\`
+3. Use ISO 8601 dates: \`"2024-12-25T18:00:00Z"\`
+4. For multiple operations, use Promise.all() or sequential awaits
+5. Always return the result(s)
+
+## Examples:
+- List events: \`async () => await codemode.list_events({})\`
+- Create event: \`async () => await codemode.create_event({ title: "Party", location: "NYC", date: "2024-12-25T18:00:00Z" })\`
+- Multiple ops: \`async () => { const events = await codemode.list_events({}); return events; }\`
+
+IMPORTANT: Batch multiple operations into ONE codemode call when possible.
+Be warm and concise in your responses.`;
 
     const result = streamText({
       model,
@@ -169,22 +127,14 @@ If errors occur, retry failed operations once. Be warm and concise in responses.
       tools: { codemode: codemodeTool },
       stopWhen: stepCountIs(3),
       onFinish: async (event) => {
-        // Accumulate Claude usage in DO storage
-        const claudeUsage = event.usage;
-        const currentClaudeUsage = await this.ctx.storage.get<UsageData>('claude-usage') || { inputTokens: 0, outputTokens: 0 };
-        const newClaudeUsage = {
-          inputTokens: currentClaudeUsage.inputTokens + (claudeUsage?.inputTokens || 0),
-          outputTokens: currentClaudeUsage.outputTokens + (claudeUsage?.outputTokens || 0),
+        // Accumulate usage in DO storage (now just Claude, no separate codegen)
+        const usage = event.usage;
+        const currentUsage = await this.ctx.storage.get<UsageData>('total-usage') || { inputTokens: 0, outputTokens: 0 };
+        const newUsage = {
+          inputTokens: currentUsage.inputTokens + (usage?.inputTokens || 0),
+          outputTokens: currentUsage.outputTokens + (usage?.outputTokens || 0),
         };
-        await this.ctx.storage.put('claude-usage', newClaudeUsage);
-        
-        // Accumulate codegen (GPT-4.1) usage in DO storage
-        const currentCodegenUsage = await this.ctx.storage.get<UsageData>('codegen-usage') || { inputTokens: 0, outputTokens: 0 };
-        const newCodegenUsage = {
-          inputTokens: currentCodegenUsage.inputTokens + this.pendingCodegenUsage.inputTokens,
-          outputTokens: currentCodegenUsage.outputTokens + this.pendingCodegenUsage.outputTokens,
-        };
-        await this.ctx.storage.put('codegen-usage', newCodegenUsage);
+        await this.ctx.storage.put('total-usage', newUsage);
         
         onFinish(event as any);
       },
@@ -193,39 +143,33 @@ If errors occur, retry failed operations once. Be warm and concise in responses.
     return result.toUIMessageStreamResponse();
   }
   
-  // Method to get usage breakdown (can be called via RPC)
+  // Method to get usage (can be called via RPC)
+  // Returns same structure as before for API compatibility, but codegen is always 0
   async getUsage(): Promise<{
     claude: UsageData;
     codegen: UsageData;
     total: UsageData;
   }> {
-    const claude = await this.ctx.storage.get<UsageData>('claude-usage') || { inputTokens: 0, outputTokens: 0 };
-    const codegen = await this.ctx.storage.get<UsageData>('codegen-usage') || { inputTokens: 0, outputTokens: 0 };
+    const total = await this.ctx.storage.get<UsageData>('total-usage') || { inputTokens: 0, outputTokens: 0 };
     return {
-      claude,
-      codegen,
-      total: {
-        inputTokens: claude.inputTokens + codegen.inputTokens,
-        outputTokens: claude.outputTokens + codegen.outputTokens,
-      },
+      claude: total,
+      codegen: { inputTokens: 0, outputTokens: 0 }, // No longer using separate codegen model
+      total,
     };
   }
   
   // Method to reset usage
   async resetUsage(): Promise<void> {
-    await this.ctx.storage.put('claude-usage', { inputTokens: 0, outputTokens: 0 });
-    await this.ctx.storage.put('codegen-usage', { inputTokens: 0, outputTokens: 0 });
+    await this.ctx.storage.put('total-usage', { inputTokens: 0, outputTokens: 0 });
   }
   
   // Method to clear all state (conversation history, usage, cache)
   async clearState(): Promise<void> {
     // Clear our custom state
-    await this.ctx.storage.delete('claude-usage');
-    await this.ctx.storage.delete('codegen-usage');
+    await this.ctx.storage.delete('total-usage');
     
     // Clear in-memory cache
     this.cachedTypes = null;
-    this.cachedDescriptions = null;
     
     // Clear messages from the AIChatAgent framework
     try {
@@ -263,9 +207,9 @@ If errors occur, retry failed operations once. Be warm and concise in responses.
       messagesCount: messages.length,
       messageStructure,
       cachedTypesLength: this.cachedTypes?.length ?? null,
-      cachedDescriptionsLength: this.cachedDescriptions?.length ?? null,
       toolsCount: 1,
       usage,
+      architecture: 'single-model (Claude generates code directly)',
     };
   }
 
